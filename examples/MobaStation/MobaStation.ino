@@ -13,7 +13,6 @@ ESP_AT_Wifi wifi(&Serial3, name, ssid, pwd);
 MobaBus mobaBus;
 MobaBus_CAN can(53, CAN_125KBPS, MCP_8MHZ, 21);
 
-
 #ifdef XPRESS_NET
 XpressNetMasterClass XpressNet;
 #endif
