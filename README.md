@@ -4,7 +4,7 @@
   <img src="/Housing/Back.jpg" width="500">
 </p>
 
-MobaStation is a open source project to create a full digital model railroad control system.
+MobaStation is a open source project to create a full digital model railroad control system based on Arduino.
 Main goal of the project is to use only cheap, easy to get components that can easy assembled.
 
 MobaStation works with the Z21-LAN-Protocol. So you can connect it as Z21 to control systems like rocrail, jmri(not tested yet) and others. You can also use mobile-apps like the official Z21 app.
