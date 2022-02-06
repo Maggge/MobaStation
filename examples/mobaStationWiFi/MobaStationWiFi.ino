@@ -2,12 +2,15 @@
 
 #include <MobaStation.h>
 
-#include "Eth_Adapter.h"
+#include "ESP_AT_Wifi.h"
 
+const char *name = "MobaStation";
+const char *ssid ="ssid";
+const char * pwd = "password";
 const char * ip = "192.168.0.111";
-byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
 
-Eth_Adapter eth(49, mac);
+
+ESP_AT_Wifi wifi(&Serial3, name, ssid, pwd);
 
 MobaBus mobaBus;
 MobaBus_CAN can(53, CAN_125KBPS, MCP_8MHZ, 21);
@@ -26,7 +29,7 @@ void setup() {
   MobaStation::attachXpressNet(&XpressNet, 22);
   #endif
 
-  MobaStation::begin(&eth, ip, DRIVE_ON_PROG);
+  MobaStation::begin(&wifi, ip, DRIVE_ON_PROG);
 
   
 

@@ -59,7 +59,6 @@ DueFlashStorage FlashStore;
 #include "Eth_Interface.h"
 
 
-#include "ESP_AT_Wifi.h"
 #include "DCC.h"
 #include "DCCWaveform.h"
 
