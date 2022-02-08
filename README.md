@@ -11,4 +11,4 @@ MobaStation works with the Z21-LAN-Protocol. So you can connect it as Z21 to con
 
 For DCC we use the <a href="https://github.com/Maggge/DCC">Maggge/DCC</a>-Library wich is extracted from <a href="https://github.com/DCC-EX/CommandStation-EX">DCC-EX</a>-Library and slightly modified.
 
-For accessories like turnouts, sensors and others we use the <a href="https://github.com/Maggge/MobaBus">MobaBus</a>-Library and XpressNet(not working yet) to connect Roco multiMAUS controller.
+For accessories like turnouts, sensors and others we use the <a href="https://github.com/Maggge/MobaBus">MobaBus</a>-Library and XpressNet (not working yet) to connect Roco multiMAUS controller.
