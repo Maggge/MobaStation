@@ -20,5 +20,5 @@ For accessories like turnouts, sensors and others we use the <a href="https://gi
   3) Connect the Arduino Mega to USB.
   4) Open the MobaStation Config Tool.
   5) Open Flash device in Menu.
-  6) Select the COM Port of the Arduino,select the firmware contained in Package and Flash device.
+  6) Select the COM Port of the Arduino and the firmware contained in Package and Flash device.
   7) Now you can connect in Menu and config the MobaStation.
