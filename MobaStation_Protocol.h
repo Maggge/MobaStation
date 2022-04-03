@@ -25,7 +25,7 @@
 #include <Arduino.h>
 #include <IPAddress.h>
 
-#define Z21_PORT 21105
+#define Z21_STANDARD_PORT 21105
 
 #define WIFI_CONNECT_TIMEOUT 16000
 

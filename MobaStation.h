@@ -25,20 +25,6 @@
 #include <Arduino.h>
 #include <Udp.h>
 
-#if __has_include ( "config.h")
-  #include "config.h"
-#else
-  #warning config.h not found. Using defaults from config.example.h 
-  #include "config.example.h"
-#endif
-
-#ifndef TURNOUTS
-#define TURNOUT TURNOUT_MobaBus
-#endif
-#ifndef DCC_TURNOUT_ADDRESS_RANGE
-#define DCC_TURNOUT_ADDRESS_RANGE 2047
-#endif
-
 #if defined(__arm__)
 #include <DueFlashStorage.h>
 DueFlashStorage FlashStore;
@@ -56,8 +42,8 @@ DueFlashStorage FlashStore;
 #endif
 
 #include "MobaStation_Protocol.h"
-#include "Eth_Interface.h"
 
+#include "Eth_Interface.h"
 
 #include "DCC.h"
 #include "DCCWaveform.h"
@@ -65,9 +51,11 @@ DueFlashStorage FlashStore;
 
 #include <MobaBus.h>
 
-#ifdef XPRESSNET
 #include <XpressNetMaster.h>
-#endif
+
+//Config Storage inside EEPROM
+#define CONFIG_STORAGE 0 //EEPROM Address where the config is stored
+
 
 //Firmware-Version der Z21:
 #define z21FWVersionMSB 0x01
@@ -76,7 +64,7 @@ DueFlashStorage FlashStore;
 //Hardware-Typ: 0x00000211 // 10870 �Z21 XL Series� (ab 2020) 
 #define z21HWTypeMSB 0x02
 #define z21HWTypeLSB 0x11
-//Seriennummer inside EEPROM:
+//Seriennummer:
 #define CONFz21SnMSB 0		//0x01
 #define CONFz21SnLSB 1		//0xE8
 
@@ -84,7 +72,7 @@ DueFlashStorage FlashStore;
 #define CONF1STORE 50 	//(10x Byte)	- Prog, RailCom, etc.
 #define CONF2STORE 60	//(15x Byte)	- Voltage: Prog, Rail, etc.
 
-#define CLIENTBCFLAGSTORE 100			//Start where Client-Hash is stored
+#define CLIENTBCFLAGSTORE 3000			//Start where Client-Hash is stored
 #define CLIENTSTORELENGTH 255		//Length of Client Broadcast-Flag store
 
 
@@ -94,12 +82,32 @@ DueFlashStorage FlashStore;
 #define z21IPinterval 2000   //interval at milliseconds
 #define z21InfoInterval 2000 //Interval for broadcast System Info
 
+#define ETH_INTERFACES 2
+
+#define MAX_XPRESSNET_CLIENTS 5
+
+#define POWER_BUTTON 24
+#define POWER_LED 25
+#define VOLTAGE_SENSE_PIN A15
+
+enum TurnoutMode{
+    MobaBus_Only,
+    DCC_Only,
+    Combined,   
+};
+
+
 class MobaStation
 {
 private:
-    static Eth_Interface *Eth;
+    static Eth_Interface *Eth[ETH_INTERFACES];
     
     static uint16_t _port;
+
+    static TurnoutMode turnoutMode;
+    static uint16_t dccAddrRange; 
+
+    static float voltageMulti;
 
     static uint32_t z21IPlastIPcheck; //store the last time of check ip's active
     static uint32_t z21LastInfoBroadcast;
@@ -111,8 +119,6 @@ private:
 
     static uint8_t xpressPin;
 
-    static void processPacket(UdpPacket *packet);
-
     static uint8_t addClientToSlot(IPAddress ip, uint8_t BCFlag);
   
     static void clearClient (uint8_t pos);
@@ -122,7 +128,6 @@ private:
     static uint32_t getz21BcFlag (uint8_t flag);
     static uint8_t getLocalBcFlag (uint32_t flag);
 
-    static bool driveOnProg;
     static bool railPower;
     static uint8_t railState;
 
@@ -133,11 +138,12 @@ private:
 
     static uint8_t rBus[20];
 
+    static void sendLanPacket(IPAddress client , uint16_t DataLen, uint16_t Header, byte *dataString, boolean withXOR);
+
     static void rBusGetData(uint8_t group, uint8_t *data);
     static void broadcastRbus(uint8_t group);
 
     static void broadcastRailState(IPAddress *force = NULL);
-    static void sendRailState(IPAddress ip);
 
     static uint8_t getLocoInfo(uint16_t addr, uint8_t *data);
     static void setLocoAbo(IPAddress client, uint16_t locoAddr);
@@ -155,6 +161,7 @@ private:
 
     static void processLanXPacket(UdpPacket *packet);
 
+
     //Ackmanager
     static IPAddress ackClient;
     static bool waitForAck;
@@ -164,17 +171,32 @@ private:
     static void cvCallback(int16_t result);
 
 public:
-    #ifdef XPRESSNET
+
+    static void (*broadcastEventHandler)(uint16_t DataLen, uint16_t Header, byte *data, boolean withXOR);
+
+    static void processPacket(UdpPacket *packet);
+
     static XpressNetMasterClass *XpressNet;
     static XpressNetClient xpressNetClients[MAX_XPRESSNET_CLIENTS];
 
+    static void assembleData(uint16_t DataLen, uint16_t Header, byte *dataString, boolean withXOR, uint8_t * dataOutput);
+
     static void addXpressNetClient(uint8_t client, uint16_t loco);
     static void attachXpressNet(XpressNetMasterClass *xpressNet, uint8_t sendReceivePin);
-    #endif
+
+    static bool attachEthInterface(Eth_Interface *eth, IPAddress ip, uint16_t port, IPAddress subnetMask);
 
     static void attachMobaBus(MobaBus *m);    
 
-    static void begin(Eth_Interface *eth, const char * ip = NULL, bool driveOnProg = false);
+    /**
+     * begin - initialize
+     * 
+     * @param motorShieldName 
+     * @param mainDriver 
+     * @param progDriver 
+     * @param driveOnProg 
+     */
+    static void begin(const FSH * motorShieldName, MotorDriver *mainDriver, MotorDriver *progDriver, bool driveOnProg = false);
 
     static void loop();
 
@@ -187,6 +209,10 @@ public:
     static IPAddress getIP(uint8_t clientID);
 
     static void broadcastLocoInfo(uint16_t addr, IPAddress *force = NULL);
+
+    static void setTurnoutMode(TurnoutMode mode, uint16_t addrRange = 2047);
+
+    static void setVoltageMultiplier(float multi);
 
 };
 

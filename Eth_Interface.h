@@ -27,9 +27,9 @@
 
 class Eth_Interface{
 public:
-    virtual bool begin(uint16_t port, const char *ip = NULL);
-    virtual bool send(IPAddress client , uint16_t DataLen, uint16_t Header, byte *dataString, boolean withXOR);
-    virtual bool receivePacket(UdpPacket *pkg);     
+    virtual bool begin(uint16_t port, IPAddress ip, IPAddress subnetMask);
+    virtual bool send(IPAddress client , uint8_t *data);
+    virtual bool receivePacket(UdpPacket *pkg);
 };
 
 #endif

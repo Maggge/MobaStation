@@ -41,6 +41,9 @@ private:
 
     WL_STATE state;
 
+    WiFiMode activeMode;
+
+
     WIFI_PACKET recBuffer;
     RECEIVE_STATE receiveState;
     bool pendingReceive;
@@ -75,6 +78,7 @@ public:
     bool connectToAP(const char * ssid, const char * pwd);
     bool startAP(const char * ssid, const char * pwd);
 
+    WiFiMode getMode();
     //Return the linkID, 255 if not successfull
     uint8_t connect(CONN_TYPE type, const char *host, uint16_t port);
     bool disconnect(uint8_t linkID);

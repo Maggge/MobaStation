@@ -21,19 +21,28 @@
 
 #include "MobaStation.h"
 
+#include "Eth_Adapter.h"
+#include "ESP_AT_Wifi.h"
+
 //------------- Variables -----------------
 
-Eth_Interface *MobaStation::Eth;
+Eth_Interface *MobaStation::Eth[ETH_INTERFACES];
+
+void (*MobaStation::broadcastEventHandler)(uint16_t DataLen, uint16_t Header, byte *data, boolean withXOR);
 
 MobaBus *MobaStation::mobaBus;
 
-#ifdef XPRESSNET
 XpressNetMasterClass *MobaStation::XpressNet;
 uint8_t MobaStation::xpressPin;
 XpressNetClient MobaStation::xpressNetClients[MAX_XPRESSNET_CLIENTS];
-#endif
 
 uint16_t MobaStation::_port;
+
+TurnoutMode MobaStation::turnoutMode = Combined;
+uint16_t MobaStation::dccAddrRange = 2047; 
+
+float MobaStation::voltageMulti = 25.58f;
+
 
 
 uint32_t MobaStation::z21IPlastIPcheck; //store the last time of check ip's active
@@ -44,7 +53,6 @@ uint8_t MobaStation::buffer[Z21_MAX_UDP_SIZE];
 
 uint8_t MobaStation::rBus[20];
 
-bool MobaStation::driveOnProg;
 bool MobaStation::railPower;
 uint8_t MobaStation::railState;
 
@@ -61,30 +69,27 @@ bool MobaStation::cvWrite;
 int16_t MobaStation::ackCv;
 //########################################
 
-void MobaStation::begin(Eth_Interface *eth, const char * ip, bool driveOnProg){
+bool MobaStation::attachEthInterface(Eth_Interface *eth, IPAddress ip, uint16_t port, IPAddress subnetMask){
+  for(int i = 0; i < ETH_INTERFACES; i++){
+    if(Eth[i] == NULL){
+      Eth[i] = eth;
+      return eth->begin(port, ip, subnetMask);
+    }
+  }
+  return false;
+}
 
+void MobaStation::begin(const FSH * motorShieldName, MotorDriver *mainDriver, MotorDriver *progDriver, bool driveOnProg){
   Serial.println("---------- MobaStation ----------");
 
-  if(eth != NULL){
-    Eth = eth; 
-    Eth->begin(Z21_PORT, ip);
-  }
-  
-  DCC::begin(MOTOR_SHIELD_TYPE);
-
-  driveOnProgTrack(driveOnProg);
+  DCC::begin(motorShieldName, mainDriver, progDriver);
+  DCC::setProgTrackSyncMain(driveOnProg);
   
   pinMode(POWER_BUTTON, INPUT_PULLUP);
   pinMode(POWER_LED, OUTPUT);
   digitalWrite(POWER_LED, LOW);
 
   setRailPower(false);
-}
-
-void MobaStation::driveOnProgTrack(bool activate){
-  driveOnProg = activate;
-  DCC::setProgTrackSyncMain(activate);
-  
 }
 
 void MobaStation::attachMobaBus(MobaBus *m){
@@ -112,48 +117,49 @@ void MobaStation::loop(){
       pwrBtnLast = currentTime;
     }
   }
-
-
+ 
   DCC::loop();
 
   processMobaBus();
 
-  #ifdef XPRESSNET
   if(XpressNet != NULL){
     XpressNet->update();
   }
-  #endif
+   
 
-  //Z21 loop
-  if(Eth != NULL){
-    if(Eth->receivePacket(&pkgBuffer)){
-        processPacket(&pkgBuffer);
+  //---------- Z21 loop ------------------
+  for(int i = 0; i < ETH_INTERFACES; i++){
+    if(Eth[i] != NULL){
+      if(Eth[i]->receivePacket(&pkgBuffer)){
+          processPacket(&pkgBuffer);
+      }
     }
-    //check if IP is still used:
-    uint32_t currentMillis = millis();
-    if ((currentMillis - z21IPlastIPcheck) > z21IPinterval) {
-      z21IPlastIPcheck = currentMillis;   
-      for (uint8_t i = 0; i < z21clientMAX; i++) {
-        if (z21Clients[i].time > 0) {
-          z21Clients[i].time--;    //Zeit herrunterrechnen
-        }
-        else {
+  }
+
+  //check if IP is still used:
+  if ((currentTime - z21IPlastIPcheck) > z21IPinterval) {
+    z21IPlastIPcheck = currentTime;   
+    for (uint8_t i = 0; i < z21clientMAX; i++) {
+      if (z21Clients[i].time > 0) {
+        z21Clients[i].time--;    //Zeit herrunterrechnen
+        if(z21Clients[i].time == 0){
           clearClient(i); 	//clear IP DATA
         }
-      } 
-    }
+      }
+    } 
+  }
 
-      if((currentMillis - z21InfoInterval) > z21LastInfoBroadcast){
-      z21LastInfoBroadcast = currentMillis;
-      broadcastSystemInfo();
-    }
-  }  
+  if((currentTime - z21InfoInterval) > z21LastInfoBroadcast){
+    z21LastInfoBroadcast = currentTime;
+    broadcastSystemInfo();
+  }
 }
 
 void MobaStation::processMobaBus(){
   if(mobaBus == NULL) return;
   MobaBus_Packet pkg;
   if(mobaBus->loop(&pkg)){
+    #ifdef DEBUG
     Serial.println("MobaBus - Packet received!");
     Serial.print("Dev Type = 0x");
     Serial.println(pkg.meta.type, HEX);
@@ -166,6 +172,7 @@ void MobaStation::processMobaBus(){
       Serial.print("; ");
     }
     Serial.println();
+    #endif
     if(pkg.meta.cmd != INFO) return;
 
     switch (pkg.meta.type)
@@ -183,7 +190,40 @@ void MobaStation::processMobaBus(){
     }
     
   }
-  
+}
+
+void MobaStation::assembleData(uint16_t DataLen, uint16_t Header, byte *dataString, boolean withXOR, uint8_t * dataOutput){
+  //XOR bestimmen:
+	dataOutput[0] = DataLen & 0xFF;
+	dataOutput[1] = DataLen >> 8;
+	dataOutput[2] = Header & 0xFF;
+	dataOutput[3] = Header >> 8;
+	dataOutput[DataLen - 1] = 0;	//XOR
+
+  for (byte i = 0; i < (DataLen-5+!withXOR); i++) { //Ohne Length und Header und XOR
+      if (withXOR)
+        dataOutput[DataLen-1] = dataOutput[DataLen-1] ^ *dataString;
+      dataOutput[i+4] = *dataString;
+      dataString++;
+  }
+}
+
+void MobaStation::sendLanPacket(IPAddress client , uint16_t DataLen, uint16_t Header, byte *dataString, boolean withXOR){
+  if(client == IPAddress()){
+    if(broadcastEventHandler != NULL){
+      broadcastEventHandler(DataLen, Header, dataString, withXOR);
+    }
+    return;
+  }
+
+  uint8_t data[24];                 //z21 send storage
+  assembleData(DataLen, Header, dataString, withXOR, data);
+
+  for(int i = 0; i < ETH_INTERFACES; i++){
+    if(Eth[i] != NULL){
+      Eth[i]->send(client, data);
+    }
+  }
 }
 
 void MobaStation::broadcastRbus(uint8_t group){
@@ -193,8 +233,11 @@ void MobaStation::broadcastRbus(uint8_t group){
 
   for(int i = 0; i < z21clientMAX; i++){
     if(z21Clients[i].time > 0 && ((Z21bcRBus & z21Clients[i].BCFlag) > 0)){
-      Eth->send(z21Clients[i].ip, 0x0F, LAN_RMBUS_DATACHANGED, data, false);
+      sendLanPacket(z21Clients[i].ip, 0x0F, LAN_RMBUS_DATACHANGED, data, false);
     }
+  }
+  if(broadcastEventHandler != NULL){
+    broadcastEventHandler(0x0F, LAN_RMBUS_DATACHANGED, data, false);
   }
 }
 
@@ -216,8 +259,11 @@ void MobaStation::broadcastTurnout(uint16_t addr, uint8_t dir, IPAddress *force)
 
   for(int i = 0; i < z21clientMAX; i++){
     if(z21Clients[i].time > 0 && ((Z21bcAll_s & z21Clients[i].BCFlag) > 0 || *force == z21Clients[i].ip)){
-      Eth->send(z21Clients[i].ip, 0x09, LAN_X_HEADER, data, true);
+      sendLanPacket(z21Clients[i].ip, 0x09, LAN_X_HEADER, data, true);
     }
+  }
+  if(broadcastEventHandler != NULL){
+    broadcastEventHandler(0x09, LAN_X_HEADER, data, true);
   }
 }
 
@@ -226,7 +272,7 @@ void MobaStation::processPacket(UdpPacket *packet){
     Serial.print("Pkg received from: ");
     Serial.println(packet->ip);
     #endif
-
+    
     addClientToSlot(packet->ip, 0);
 
     int header = (packet->data[3]<<8) + packet->data[2];
@@ -242,7 +288,7 @@ void MobaStation::processPacket(UdpPacket *packet){
             data[1] = FSTORAGE.read(CONFz21SnMSB);
             data[2] = 0x00; 
             data[3] = 0x00;
-            Eth->send(packet->ip, 0x08, LAN_GET_SERIAL_NUMBER, data, false); //Seriennummer 32 Bit (little endian)
+            sendLanPacket(packet->ip, 0x08, LAN_GET_SERIAL_NUMBER, data, false); //Seriennummer 32 Bit (little endian)
             break;
         }
         case LAN_GET_HWINFO: {
@@ -257,7 +303,7 @@ void MobaStation::processPacket(UdpPacket *packet){
             data[5] = z21FWVersionMSB;
             data[6] = 0x00; 
             data[7] = 0x00;
-            Eth->send(packet->ip, 0x0C, LAN_GET_HWINFO, data, false);
+            sendLanPacket(packet->ip, 0x0C, LAN_GET_HWINFO, data, false);
             break;
         }
         case LAN_LOGOFF: {
@@ -274,7 +320,7 @@ void MobaStation::processPacket(UdpPacket *packet){
             #define z21_START_LOCKED   0x01  // �z21 start�: Fahren und Schalten per LAN gesperrt 
             #define z21_START_UNLOCKED 0x02  // �z21 start�: alle Feature-Sperren aufgehoben */
             data[0] = 0x02; //keine Features gesperrt
-            Eth->send(packet->ip, 0x05, LAN_GET_CODE, data, false);
+            sendLanPacket(packet->ip, 0x05, LAN_GET_CODE, data, false);
             break;
         }
         case LAN_X_HEADER: {
@@ -297,7 +343,7 @@ void MobaStation::processPacket(UdpPacket *packet){
             addClientToSlot(packet->ip, getLocalBcFlag(bcflag));
             data[0] = LAN_X_BC_TRACK_POWER;
             data[1] = railState;
-            Eth->send(packet->ip, 0x07, LAN_X_HEADER, data, true);
+            sendLanPacket(packet->ip, 0x07, LAN_X_HEADER, data, true);
             #ifdef DEBUG
             Serial.print("Broadcastflag: ");
             Serial.println(addClientToSlot(packet->ip, 0), BIN);
@@ -313,7 +359,7 @@ void MobaStation::processPacket(UdpPacket *packet){
             data[1] = flag >> 8;
             data[2] = flag >> 16;
             data[3] = flag >> 24;
-            Eth->send(packet->ip, 0x08, LAN_GET_BROADCASTFLAGS, data, false);
+            sendLanPacket(packet->ip, 0x08, LAN_GET_BROADCASTFLAGS, data, false);
             #ifdef DEBUG
             Serial.print("Broadcastflag: ");
             Serial.println(flag, BIN);
@@ -344,21 +390,25 @@ void MobaStation::processPacket(UdpPacket *packet){
             #endif
             break;
         }
-        case LAN_RMBUS_GETDATA: {          
+        case LAN_RMBUS_GETDATA: {  
+            #ifdef DEBUG        
             Serial.println("LAN_RMBUS_GETDATA");
             Serial.print("Group: ");
             Serial.println(packet->data[4]);
+            #endif
             data[0] = packet->data[4];
             rBusGetData(packet->data[4], data);
-            Eth->send(packet->ip, 0x0F, LAN_RMBUS_DATACHANGED, data, false);
+            sendLanPacket(packet->ip, 0x0F, LAN_RMBUS_DATACHANGED, data, false);
             break;
         }
         case LAN_RMBUS_PROGRAMMODULE: {
+            #ifdef DEBUG
             Serial.print("Data Length: ");
             Serial.println(packet->data[0]);
             Serial.println("LAN_RMBUS_PROGRAMMODULE");
             Serial.print("Modul Address: ");
             Serial.println(packet->data[4]);
+            #endif
             mobaBus->sendPkg(FEEDBACK, packet->data[4], SET, 0, data);
             break;
         }
@@ -425,7 +475,7 @@ void MobaStation::processLanXPacket(UdpPacket *packet){
       data[1] = 0x21;	//DB0
       data[2] = 0x30;   //X-Bus Version
       data[3] = 0x12;  //ID der Zentrale
-      Eth->send(packet->ip, 0x09, LAN_X_HEADER, data, true);
+      sendLanPacket(packet->ip, 0x09, LAN_X_HEADER, data, true);
       break;
     case 0x24:
       #ifdef DEBUG
@@ -434,7 +484,7 @@ void MobaStation::processLanXPacket(UdpPacket *packet){
       data[0] = LAN_X_STATUS_CHANGED;	//X-Header: 0x62
       data[1] = 0x22;			//DB0
       data[2] = railState;		//DB1: Status
-      Eth->send(packet->ip, 0x08, LAN_X_HEADER, data, true);
+      sendLanPacket(packet->ip, 0x08, LAN_X_HEADER, data, true);
       break;
     case 0x80:
       #ifdef DEBUG
@@ -458,7 +508,7 @@ void MobaStation::processLanXPacket(UdpPacket *packet){
         uint8_t data[2];
         data[0] = LAN_X_CV_NACK;
         data[1] = 0x13;
-        Eth->send(packet->ip, 0x07, LAN_X_HEADER, data, true);
+        sendLanPacket(packet->ip, 0x07, LAN_X_HEADER, data, true);
       }
       else{
         #ifdef DEBUG
@@ -482,7 +532,7 @@ void MobaStation::processLanXPacket(UdpPacket *packet){
         uint8_t data[2];
         data[0] = LAN_X_CV_NACK;
         data[1] = 0x13;
-        Eth->send(packet->ip, 0x07, LAN_X_HEADER, data, true);
+        sendLanPacket(packet->ip, 0x07, LAN_X_HEADER, data, true);
       }
       else{
         #ifdef DEBUG
@@ -519,22 +569,27 @@ void MobaStation::processLanXPacket(UdpPacket *packet){
         DCC::writeCVBitMain(addr, cv, bitNum, value);
       }
       else {
-  
+        #ifdef DEBUG
         Serial.println("LAN_X_CV_POM_READ_BYTE - NOT IMPLEMENTED YET"); 
+        #endif
       }
     }
     else if (packet->data[5] == 0x31) {  //DB0
-     
+      #ifdef DEBUG
       Serial.println("LAN_X_CV_POM_ACCESSORY - NOT IMPLEMENTED YET"); 
+      #endif
     }
     break;      
   case LAN_X_GET_TURNOUT_INFO: {
     uint16_t addr = ((packet->data[5] << 8) + packet->data[6]) + 1; //Z21 - Protocol 0=1, 1=2, .....
 
-    if(TURNOUTS == TURNOUT_MobaBus || (TURNOUTS == TURNOUT_HYBRID && addr > DCC_TURNOUT_ADDRESS_RANGE)){
+    if(turnoutMode == MobaBus_Only || (turnoutMode == Combined && addr > dccAddrRange)){
       if(mobaBus != NULL){
         mobaBus->sendPkg(ACCESSORIE, addr, GET, 0, data);
       }
+    }
+    else{
+
     }
       break;
     }
@@ -544,16 +599,19 @@ void MobaStation::processLanXPacket(UdpPacket *packet){
     bool dir = bitRead(packet->data[7], 0);
     bool power = bitRead(packet->data[7], 3);
     
+    #ifdef DEBUG
     Serial.print("X_SET_TURNOUT Adr.: ");
     Serial.print(addr);
     Serial.print(" Dir: ");
     Serial.print(dir);
     Serial.print(" - ");
     Serial.println(power);
-    if(TURNOUTS == TURNOUT_DCC || (TURNOUTS == TURNOUT_HYBRID && addr <= DCC_TURNOUT_ADDRESS_RANGE)){
+    #endif
+    if(turnoutMode == DCC_Only || (turnoutMode == Combined && addr <= dccAddrRange)){
       DCC::setAccessory(addr, dir, power); //Not tested yet!!
+      broadcastTurnout(addr , dir);
     }
-    if(TURNOUTS == TURNOUT_MobaBus || (TURNOUTS == TURNOUT_HYBRID && addr > DCC_TURNOUT_ADDRESS_RANGE)){
+    if(turnoutMode == MobaBus_Only || (turnoutMode == Combined && addr > dccAddrRange)){
       if(mobaBus != NULL){
         data[0] = dir;
         data[1] = power;
@@ -589,7 +647,7 @@ void MobaStation::processLanXPacket(UdpPacket *packet){
     DCC::setThrottle(0,1,1);
     data[0] = LAN_X_BC_STOPPED;
     data[1] = 0x00;
-    Eth->send(packet->ip, 0x07, LAN_X_HEADER, data, true);
+    sendLanPacket(packet->ip, 0x07, LAN_X_HEADER, data, true);
     break;  
   case LAN_X_GET_LOCO_INFO:
     if (packet->data[5] == 0xF0) {  //DB0
@@ -653,7 +711,7 @@ void MobaStation::processLanXPacket(UdpPacket *packet){
     data[1] = 0x0A;		//identify Firmware (not change)
     data[2] = z21FWVersionMSB;   //V_MSB
     data[3] = z21FWVersionLSB;  //V_LSB
-    Eth->send(packet->ip, 0x09, LAN_X_HEADER, data, true);
+    sendLanPacket(packet->ip, 0x09, LAN_X_HEADER, data, true);
     break;     
   case 0x73:
     //LAN_X_??? WLANmaus periodische Abfrage: 
@@ -672,7 +730,7 @@ void MobaStation::processLanXPacket(UdpPacket *packet){
     #endif
     data[0] = 0x61;
     data[1] = 0x82;
-    Eth->send(packet->ip, 0x07, LAN_X_HEADER, data, true);
+    sendLanPacket(packet->ip, 0x07, LAN_X_HEADER, data, true);
     break;
   }
 }
@@ -703,12 +761,14 @@ void MobaStation::cvCallback(int16_t result){
     data[3] = ackCv & 0xFF; 
     data[4] = result;
   }
-  Eth->send(ackClient, len, LAN_X_HEADER, data, true);
+  sendLanPacket(ackClient, len, LAN_X_HEADER, data, true);
   cvWrite = false;
   waitForAck = false;
 }
 
 uint8_t MobaStation::addClientToSlot(IPAddress ip, uint8_t BCFlag){
+    if(ip == IPAddress()) return 0;
+
     uint8_t slot = z21clientMAX;
 
     #if defined(ESP32)
@@ -815,7 +875,7 @@ void MobaStation::broadcastSystemInfo(IPAddress *force){
   int16_t mainCurrent = DCCWaveform::mainTrack.getCurrentmA();
   int16_t progCurrent = DCCWaveform::progTrack.getCurrentmA();
 
-  uint16_t mainvoltage = (uint16_t)((float)analogRead(VOLTAGE_PIN) * VOLTAGE_MULTI);
+  uint16_t mainvoltage = (uint16_t)((float)analogRead(VOLTAGE_SENSE_PIN) * voltageMulti);
 
   //Serial.println(mainvoltage);
 
@@ -856,8 +916,11 @@ void MobaStation::broadcastSystemInfo(IPAddress *force){
       Serial.print("Send System info to ");
       Serial.println(z21Clients[i].ip);
       #endif
-      Eth->send(z21Clients[i].ip, 0x14, LAN_SYSTEMSTATE_DATACHANGED, data, false);
+      sendLanPacket(z21Clients[i].ip, 0x14, LAN_SYSTEMSTATE_DATACHANGED, data, false);
     }
+  }
+  if(broadcastEventHandler != NULL){
+    broadcastEventHandler(0x14, LAN_SYSTEMSTATE_DATACHANGED, data, false);
   }
 }
 
@@ -875,27 +938,15 @@ void MobaStation::setRailPower(bool power, IPAddress *client = NULL){
   }else{
     railState = csTrackVoltageOff;
   }
-  #ifdef XPRESSNET
+
   if(XpressNet != NULL ){
     XpressNet->setPower(railState);
   }
-  #endif
+
   broadcastRailState(client);
 }
 
 void MobaStation::broadcastRailState(IPAddress * force){
-  for(uint8_t i = 0; i < z21clientMAX; i++){
-    if((z21Clients[i].time > 0 && (Z21bcAll_s & z21Clients[i].BCFlag) > 0) || (force != NULL && *force == z21Clients[i].ip)){
-      sendRailState(z21Clients[i].ip);
-    }
-  }
-}
-
-void MobaStation::sendRailState(IPAddress ip){
-  #ifdef DEBUG
-  Serial.print("Send RailState to ");
-  Serial.println(ip);
-  #endif
   uint8_t data[2];
   data[0] = LAN_X_BC_TRACK_POWER;
   if(railPower){
@@ -903,7 +954,19 @@ void MobaStation::sendRailState(IPAddress ip){
   }else{
     data[1] = 0x00;
   }
-  Eth->send(ip, 0x07, LAN_X_HEADER, data, true);
+
+  for(uint8_t i = 0; i < z21clientMAX; i++){
+    if((z21Clients[i].time > 0 && (Z21bcAll_s & z21Clients[i].BCFlag) > 0) || (force != NULL && *force == z21Clients[i].ip)){
+      #ifdef DEBUG
+      Serial.print("Send RailState to ");
+      Serial.println(ip);
+      #endif
+      sendLanPacket(z21Clients[i].ip, 0x07, LAN_X_HEADER, data, true);
+    }
+  }
+  if(broadcastEventHandler != NULL){
+    broadcastEventHandler(0x07, LAN_X_HEADER, data, true);
+  }
 }
 
 uint8_t MobaStation::getLocoInfo(uint16_t addr, uint8_t *data){
@@ -938,7 +1001,7 @@ uint8_t MobaStation::getLocoInfo(uint16_t addr, uint8_t *data){
   data[6] = (functions & 0x1FE0) >> 5; //Funktion 5 -12
   data[7] = (functions & 0x1FE000) >> 13; //Funktion 13 - 20
   data[8] = (functions & 0x1FE00000) >> 21; //Funktion 21 - 28
-  //#ifdef DEBUG
+  #ifdef DEBUG
   Serial.print("Loco Info: ");
   Serial.print("Speed = ");
   Serial.print(speed);
@@ -948,7 +1011,7 @@ uint8_t MobaStation::getLocoInfo(uint16_t addr, uint8_t *data){
   Serial.print(speedStepsInfo);
   Serial.print("; Func0 = ");
   Serial.println(functions & B1);
-  //#endif
+  #endif
   return 0x09;
 }
 
@@ -983,7 +1046,7 @@ void MobaStation::broadcastLocoInfo(uint16_t addr, IPAddress *force = NULL){
       Serial.print("Force Loco Info to");
       Serial.println(z21Clients[i].ip);
       #endif
-      Eth->send( z21Clients[i].ip, len, LAN_X_HEADER, data, true);
+      sendLanPacket( z21Clients[i].ip, len, LAN_X_HEADER, data, true);
     }
     else if((Z21bcAll_s & z21Clients[i].BCFlag) > 0){
       for (size_t j = 0; j < CLIENT_MAX_LOCO_ABO; j++){
@@ -992,12 +1055,16 @@ void MobaStation::broadcastLocoInfo(uint16_t addr, IPAddress *force = NULL){
             Serial.print("Send Loco Info to ");
             Serial.println(z21Clients[i].ip);
             #endif
-            Eth->send( z21Clients[i].ip, len, LAN_X_HEADER, data, true);
+            sendLanPacket( z21Clients[i].ip, len, LAN_X_HEADER, data, true);
           }
       }
     }
   }
-  #ifdef XPRESSNET
+
+  if(broadcastEventHandler != NULL){
+    broadcastEventHandler(len, LAN_X_HEADER, data, true);
+  }
+
   if(XpressNet != NULL){
     unsigned long func = DCC::getFns(addr);
     uint8_t speedStepsInfo = DCC::getSpeedSteps(addr);
@@ -1026,7 +1093,6 @@ void MobaStation::broadcastLocoInfo(uint16_t addr, IPAddress *force = NULL){
 	  XpressNet->setFunc13to20(addr, (uint8_t)(func >> 13)); //Gruppe 4: F20 F19 F18 F17 F16 F15 F14 F13  
 	  XpressNet->setFunc21to28(addr, (uint8_t)(func >> 21)); //Gruppe 5: F28 F27 F26 F25 F24 F23 F22 F21
   }
-  #endif
 }
 
 //--------------------------------------------------------------------------------
@@ -1083,8 +1149,16 @@ void MobaStation::rBusGetData(uint8_t group, uint8_t *data){
   }
 }
 
+void MobaStation::setTurnoutMode(TurnoutMode mode, uint16_t addrRange = 2047){
+  turnoutMode = mode;
+  dccAddrRange = addrRange;
+}
+
+void MobaStation::setVoltageMultiplier(float multi){
+  voltageMulti = multi;
+}
+
 //----------   Xpress-Net   ----------
-#ifdef XPRESSNET
 
 void MobaStation::attachXpressNet(XpressNetMasterClass *xpressNet, uint8_t sendReceivePin){
   if(xpressNet == NULL) return;
@@ -1110,7 +1184,9 @@ void MobaStation::addXpressNetClient(uint8_t client, uint16_t loco){
 }
 
 void notifyXNetgiveLocoMM(uint8_t UserOps, uint16_t Address){
+  #ifdef DEBUG
   Serial.println("MM get Loco Info");
+  #endif
   unsigned long func = DCC::getFns(Address);
   uint8_t speedStepsInfo = DCC::getSpeedSteps(Address);
   if(speedStepsInfo == 14){
@@ -1129,10 +1205,12 @@ void notifyXNetgiveLocoMM(uint8_t UserOps, uint16_t Address){
 }
 
 void notifyXNetgiveLocoInfo(uint8_t UserOps, uint16_t Address) {
+  #ifdef DEBUG
   Serial.print("Get Loco Info UserOps: ");
   Serial.print(UserOps);
   Serial.print("  Addr: ");
   Serial.println(Address);
+  #endif
   unsigned long func = DCC::getFns(Address);
   uint8_t speedStepsInfo = DCC::getSpeedSteps(Address);
   if(speedStepsInfo == 14){
@@ -1152,10 +1230,12 @@ void notifyXNetgiveLocoInfo(uint8_t UserOps, uint16_t Address) {
 }
 
 void notifyXNetgiveLocoFunc(uint8_t UserOps, uint16_t Address) {
+  #ifdef DEBUG
   Serial.print("Get Loco Func UserOps: ");
   Serial.print(UserOps);
   Serial.print("  Addr: ");
   Serial.println(Address);
+  #endif
   MobaStation::addXpressNetClient(UserOps, Address);
   unsigned long func = DCC::getFns(Address);
   MobaStation::XpressNet->SetFktStatus(UserOps, (uint8_t)(func >> 13), (uint8_t)(func >> 21)); //Fkt4, Fkt5
@@ -1203,10 +1283,12 @@ void notifyXNetLocoDrive128(uint16_t Address, uint8_t Speed) {
 
 //--------------------------------------------------------------
 void notifyXNetLocoFunc1(uint16_t Address, uint8_t Func1) {
+  #ifdef DEBUG
   Serial.print("XNet A:");
   Serial.print(Address);
   Serial.print(", F1:");
   Serial.println(Func1, BIN);
+  #endif
   DCC::setFn(Address, 0, (bool)(Func1 >> 4 | B0000001));
   for(int i = 0; i < 4; i++){
     DCC::setFn(Address, i+1, (bool)(Func1 >> i | B0000001));
@@ -1216,10 +1298,12 @@ void notifyXNetLocoFunc1(uint16_t Address, uint8_t Func1) {
 
 //--------------------------------------------------------------
 void notifyXNetLocoFunc2(uint16_t Address, uint8_t Func2) {
+  #ifdef DEBUG
   Serial.print("XNet A:");
   Serial.print(Address);
   Serial.print(", F2:");
   Serial.println(Func2, BIN);
+  #endif
   for(int i = 0; i < 4; i++){
     DCC::setFn(Address, i+5, bitRead(Func2, i));
   }
@@ -1228,10 +1312,12 @@ void notifyXNetLocoFunc2(uint16_t Address, uint8_t Func2) {
 
 //--------------------------------------------------------------
 void notifyXNetLocoFunc3(uint16_t Address, uint8_t Func3) {
+  #ifdef DEBUG
   Serial.print("XNet A:");
   Serial.print(Address);
   Serial.print(", F3:");
   Serial.println(Func3, BIN);
+  #endif
   for(int i = 0; i < 4; i++){
     DCC::setFn(Address, i+9, bitRead(Func3, i));
   }
@@ -1240,10 +1326,12 @@ void notifyXNetLocoFunc3(uint16_t Address, uint8_t Func3) {
 
 //--------------------------------------------------------------
 void notifyXNetLocoFunc4(uint16_t Address, uint8_t Func4) {
+  #ifdef DEBUG
   Serial.print("XNet A:");
   Serial.print(Address);
   Serial.print(", F4:");
   Serial.println(Func4, BIN);
+  #endif
   for(int i = 0; i < 8; i++){
     DCC::setFn(Address, i+13, bitRead(Func4, i));
   }
@@ -1252,10 +1340,12 @@ void notifyXNetLocoFunc4(uint16_t Address, uint8_t Func4) {
 
 //--------------------------------------------------------------
 void notifyXNetLocoFunc5(uint16_t Address, uint8_t Func5) {
+  #ifdef DEBUG
   Serial.print("XNet A:");
   Serial.print(Address);
   Serial.print(", F5:");
   Serial.println(Func5, BIN);
+  #endif
   for(int i = 0; i < 8; i++){
     DCC::setFn(Address, i+21, bitRead(Func5, i));
   }
@@ -1263,10 +1353,12 @@ void notifyXNetLocoFunc5(uint16_t Address, uint8_t Func5) {
 }
 void notifyXNetTrnt(uint16_t Address, uint8_t data) {
   if (bitRead(data,3) == 0x01) {  //Weiche Aktiv == HIGH?
+    #ifdef DEBUG
     Serial.print("XNet TA:");
     Serial.print(Address);
     Serial.print(", P:");
     Serial.println(data & 0x01);
+    #endif
   }
 }
 
@@ -1284,4 +1376,3 @@ void notifyXNetTrntInfo(uint8_t UserOps, uint8_t Address, uint8_t data) {
 */  
   MobaStation::XpressNet->SetTrntStatus(UserOps, Address, pos);
 }
-#endif

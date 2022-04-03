@@ -21,52 +21,43 @@
 
 #include "Eth_Adapter.h"
 
-#define DEBUG
+//#define DEBUG
 
 Eth_Adapter::Eth_Adapter(uint8_t cs, byte * mac){
     this->cs = cs;
     this->mac = mac;
 }
 
-bool Eth_Adapter::begin(uint16_t port, const char *ip = NULL){
+bool Eth_Adapter::begin(uint16_t port,  IPAddress ip, IPAddress subnetMask){
     this->port = port;
-    this->ip.fromString(ip);
+    this->ip = ip;
     Ethernet.init(cs);
 
     Ethernet.begin(mac, this->ip);
+    Ethernet.setSubnetMask(subnetMask);
 
     if(Ethernet.hardwareStatus() == EthernetNoHardware){
+        #ifdef DEBUG
         Serial.println("Ethernet shield was not found.");
+        #endif
         return false;
     }
     
     if(Ethernet.linkStatus() == LinkOFF){
+        #ifdef DEBUG
         Serial.println("Ethernet cable is not connected.");
+        #endif
     }
 
     Udp.begin(port);
+    #ifdef DEBUG
     Serial.print("Ethernet connected IP: ");
     Serial.println(Ethernet.localIP());
+    #endif
     return true;
 }
 
-bool Eth_Adapter::send(IPAddress client , uint16_t DataLen, uint16_t Header, byte *dataString, boolean withXOR){
-    uint8_t data[24]; 			//z21 send storage
-	
-	//--------------------------------------------        
-	//XOR bestimmen:
-	data[0] = DataLen & 0xFF;
-	data[1] = DataLen >> 8;
-	data[2] = Header & 0xFF;
-	data[3] = Header >> 8;
-	data[DataLen - 1] = 0;	//XOR
-
-    for (byte i = 0; i < (DataLen-5+!withXOR); i++) { //Ohne Length und Header und XOR
-        if (withXOR)
-			data[DataLen-1] = data[DataLen-1] ^ *dataString;
-		data[i+4] = *dataString;
-        dataString++;
-    }
+bool Eth_Adapter::send(IPAddress client , uint8_t *data){
     #ifdef DEBUG
     Serial.print("Send Packet to ");
     Serial.println(client);

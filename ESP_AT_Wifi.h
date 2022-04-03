@@ -34,26 +34,22 @@ private:
     HardwareSerial *ser;
 
     WiFiUDP Udp;
-    
-    bool _APmode;
 
+    WiFiMode _mode;
 
-    const char * _hostname;
     const char * _ssid;
     const char * _pwd;
     uint16_t _port;
     
 public:
-    ESP_AT_Wifi(HardwareSerial *serial, const char * hostname, const char * ssid, const char * pwd);
-    ESP_AT_Wifi(HardwareSerial *serial, const char * APname, const char * pwd);
+    ESP_AT_Wifi(HardwareSerial *serial, const char *ssid, const char *pwd, WiFiMode mode = Hybrid_MODE);
 
-    bool begin(uint16_t port, const char *ip = NULL);
-    bool send(IPAddress client, uint16_t DataLen, uint16_t Header, uint8_t *dataString, boolean withXOR);
+    bool begin(uint16_t port, IPAddress ip, IPAddress subnetMask);
+    bool send(IPAddress client, uint8_t *data);
     bool receivePacket(UdpPacket *pkg);
 
     bool setIP(IPAddress ip);
     bool setIP(const char *ip);
-    bool setHostname(const char *hostname);
     bool connectToAP(const char * ssid, const char * pwd);
     bool startAP(const char * ssid, const char * pwd);
     

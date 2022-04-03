@@ -43,10 +43,17 @@ private:
 
 
 public:
+    /**
+     * @brief Construct a new Eth_Adapter object
+     * 
+     * @param cs 
+     * @param mac 
+     * @param backup interface, maybe Wifi. If the link is down on startup the backup Interface will be initialized
+     */
     Eth_Adapter(uint8_t cs, byte * mac);
 
-    bool begin(uint16_t port, const char *ip = NULL);
-    bool send(IPAddress client , uint16_t DataLen, uint16_t Header, byte *dataString, boolean withXOR);
+    bool begin(uint16_t port, IPAddress ip, IPAddress subnetMask);
+    bool send(IPAddress client , uint8_t *data);
     bool receivePacket(UdpPacket *pkg);    
 
 };

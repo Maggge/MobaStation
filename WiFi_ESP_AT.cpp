@@ -18,6 +18,7 @@
   You should have received a copy of the GNU General Public License
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
+//#define DEBUG
 
 #include "WiFi_ESP_AT.h"
 
@@ -54,10 +55,6 @@ bool WiFiClass::init(Stream *ser){
         }
     }
 
-    //Set the wifi Mode
-    wifi->print("AT+CWMODE=3\r\n");
-    if(!checkForOk(1000)) return false;
-
     return true;
 }
 
@@ -93,6 +90,10 @@ bool WiFiClass::setHostname(const char *hostname){
 }
 
 bool WiFiClass::connectToAP(const char * ssid, const char * pwd){
+    //Set the wifi Mode
+    wifi->print("AT+CWMODE=1\r\n");
+    if(!checkForOk(1000)) return false;
+    activeMode = Station_Mode;
     #ifdef DEBUG
     Serial.print("Connect to ");
     Serial.print(ssid);
@@ -134,6 +135,10 @@ bool WiFiClass::connectToAP(const char * ssid, const char * pwd){
 }
 
 bool WiFiClass::startAP(const char * ssid, const char * pwd){
+    //Set the wifi Mode
+    wifi->print("AT+CWMODE=2\r\n");
+    if(!checkForOk(1000)) return false;
+    activeMode = SoftAP_Mode;
     #ifdef DEBUG
     Serial.print("Start Access Point...");
     #endif
@@ -150,16 +155,26 @@ bool WiFiClass::startAP(const char * ssid, const char * pwd){
         Serial.print("PWD: ");
         Serial.println(pwd);
         #endif
-        state = WL_AP_LISTENING;
-        return true;
+        wifi->print("AT+CIPAP_CUR=\"192.168.0.111\",\"192.168.0.111\",\"255.255.255.0\"\r\n");
+        if(checkForOk(5000)){
+            wifi->print("AT+CWDHCPS_CUR=1,3,\"192.168.0.10\",\"192.168.0.25\"\r\n");
+            if(checkForOk(5000)){
+                state = WL_AP_LISTENING;
+                return true;
+            }
+        }
     }
-    else{
-        #ifdef DEBUG
-        Serial.println("FAILED!");
-        #endif
-        state = WL_AP_FAILED;
-        return false;
-    }
+    
+    #ifdef DEBUG
+    Serial.println("FAILED!");
+    #endif
+    state = WL_AP_FAILED;
+    return false;
+    
+}
+
+WiFiMode WiFiClass::getMode(){
+    return activeMode;
 }
 
 uint8_t WiFiClass::connect(CONN_TYPE type, const char *host, uint16_t port){

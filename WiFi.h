@@ -27,6 +27,12 @@
 
 //#define DEBUG
 
+enum WiFiMode{
+    Station_Mode,
+    SoftAP_Mode,
+    Hybrid_MODE,
+};
+
 enum WL_STATE{
     WL_IDLE_STATUS = 0,
     WL_CONNECTED,

@@ -22,62 +22,78 @@
 #ifndef ESP32
 #include "ESP_AT_Wifi.h"
 
-ESP_AT_Wifi::ESP_AT_Wifi(HardwareSerial *serial, const char * hostname, const char * ssid, const char * pwd){
+ESP_AT_Wifi::ESP_AT_Wifi(HardwareSerial *serial, const char * ssid, const char * pwd, WiFiMode mode){
     ser = serial;
-    _hostname = hostname;
     _ssid = ssid;
     _pwd = pwd;
-    _APmode = false;
+    _mode = mode;
 }
 
-ESP_AT_Wifi::ESP_AT_Wifi(HardwareSerial *serial, const char * APname, const char * pwd){
-    ser = serial;
-    _hostname = APname;
-    _pwd = pwd;
-    _APmode = true;
-}
-
-bool ESP_AT_Wifi::begin(uint16_t port, const char *ip){
+bool ESP_AT_Wifi::begin(uint16_t port, IPAddress ip, IPAddress subnetMask){
     _port = port;
-    if(!WiFi.init(ser, 115200)) return false;
-
-    if(_APmode){
-        startAP(_ssid, _pwd);
-        Serial.println("Accesspoint startet!");
-        Serial.print("SSID: ");
-        Serial.print(_ssid);
-        Serial.print("  PWD: ");
-        Serial.println(_pwd);
+    if(!WiFi.init(ser, 115200)){
+        Serial.println(F("No WiFi module found"));
+        return false;
     }
-    else{
+    
+    if(_mode == Hybrid_MODE){
+        Serial.println(F("Start Wifi in Hybrid mode"));
         if(!connectToAP(_ssid, _pwd)){
-            Serial.println("FAILED!");
-            if(startAP(STANDARD_AP_SSID, STANDARD_AP_PWD)){
-                Serial.println("Accesspoint startet!");
-                Serial.print("SSID: ");
-                Serial.print(STANDARD_AP_SSID);
-                Serial.print("  PWD: ");
-                Serial.println(STANDARD_AP_PWD);
+            Serial.println(F("FAILED!"));
+            if(!startAP(STANDARD_AP_SSID, STANDARD_AP_PWD)){
+                return false;
             }
+            Serial.println(F("Accesspoint startet!"));
+            Serial.print(F("SSID: "));
+            Serial.print(STANDARD_AP_SSID);
+            Serial.print(F("  PWD: "));
+            Serial.println(STANDARD_AP_PWD);
         }
         else{
-            Serial.println("CONNECTED!");
-            if(ip != NULL){
-                if(setIP(ip)){
-                    Serial.print("IP Address: ");
-                    Serial.println(ip);
-                }
+            Serial.println(F("CONNECTED!"));
+            if(setIP(ip)){
+                Serial.print(F("IP Address: "));
+                Serial.println(ip);
             }
-            if(_hostname != NULL){
-                if(setHostname(_hostname)){
-                    Serial.print("Hostname: ");
-                    Serial.println(_hostname);
-                }
+            if(WiFi.setHostname("MobaStation")){
+                Serial.println(F("Hostname: Mobastation"));
             }
-        }      
-    } 
+        }
+    }
+    else if(_mode == Station_Mode){
+        Serial.println(F("Start Wifi in Station mode"));
+        if(!connectToAP(_ssid, _pwd)){
+            Serial.println(F("FAILED!"));
+            return false;
+        }
+        else{
+            Serial.println(F("CONNECTED!"));
+            if(setIP(ip)){
+                Serial.print(F("IP Address: "));
+                Serial.println(ip);
+            }
+            if(WiFi.setHostname("MobaStation")){
+                Serial.println(F("Hostname: Mobastation"));
+            }
+        }
+    }
+    else if(_mode == SoftAP_Mode){
+        Serial.println(F("Start Wifi in Accesspoint mode"));
+        if(!startAP(STANDARD_AP_SSID, STANDARD_AP_PWD)){
+            Serial.println(F("FAILED!"));
+            return false;
+        }
+        Serial.println(F("Accesspoint startet!"));
+        Serial.print(F("SSID: "));
+        Serial.print(STANDARD_AP_SSID);
+        Serial.print(F("  PWD: "));
+        Serial.println(STANDARD_AP_PWD);
+    }
+    
     
     Udp.begin(port);
+    Serial.print(F("MobaStation is listen on Port: "));
+    Serial.println(port);
     return true;
 }
 
@@ -86,9 +102,9 @@ bool ESP_AT_Wifi::connectToAP(const char * ssid, const char * pwd){
     _ssid = ssid;
     _pwd = pwd;
 
-    Serial.print("Connect to ");
+    Serial.print(F("Connect to "));
     Serial.print(ssid);
-    Serial.print("...");
+    Serial.print(F("..."));
 
     return WiFi.connectToAP(ssid, pwd); 
 }
@@ -101,44 +117,30 @@ bool ESP_AT_Wifi::setIP(const char *ip){
     return WiFi.setIP(ip);
 }
 
-bool ESP_AT_Wifi::setHostname(const char *hostname){
-    _hostname = hostname;
-    return WiFi.setHostname(hostname);
-}
-
 bool ESP_AT_Wifi::startAP(const char * ssid, const char * pwd){
-    Serial.println("Start AccessPoint!");
+    Serial.println(F("Start AccessPoint!"));
    _ssid = ssid;
    _pwd = pwd;
-   WiFi.startAP(ssid, pwd);
-   return true;
+   if(WiFi.startAP(ssid, pwd)){
+       Serial.println(F("Accesspoint startet!"));
+        Serial.print(F("SSID: "));
+        Serial.print(ssid);
+        Serial.print(F("  PWD: "));
+        Serial.println(pwd);
+        return true;
+   }
+   return false;
 }
 
-bool ESP_AT_Wifi::send(IPAddress client, uint16_t DataLen, uint16_t Header, uint8_t *dataString, boolean withXOR){
-    uint8_t data[24]; 			//z21 send storage
-	
-	//--------------------------------------------        
-	//XOR bestimmen:
-	data[0] = DataLen & 0xFF;
-	data[1] = DataLen >> 8;
-	data[2] = Header & 0xFF;
-	data[3] = Header >> 8;
-	data[DataLen - 1] = 0;	//XOR
-
-    for (byte i = 0; i < (DataLen-5+!withXOR); i++) { //Ohne Length und Header und XOR
-        if (withXOR)
-			data[DataLen-1] = data[DataLen-1] ^ *dataString;
-		data[i+4] = *dataString;
-        dataString++;
-    }
+bool ESP_AT_Wifi::send(IPAddress client, uint8_t *data){
     #ifdef DEBUG
-    Serial.print("Send Packet to ");
+    Serial.print(F("Send Packet to "));
     Serial.println(client);
     #endif
     //--------------------------------------------   
     if(!Udp.beginPacket(client, _port)){
         #ifdef DEBUG
-        Serial.println("Send Packet failed");
+        Serial.println(F("Send Packet failed"));
         #endif
         return false;
     }
