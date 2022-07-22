@@ -50,7 +50,9 @@ Coming soon: XpressNet to connect Roco multiMAUS controller.
       <img src="/ConfigTool-images/ConfigTool_flash.PNG" width="500"> 
     </p>
   6) Select the COM Port of the Arduino and the firmware contained in Package and "Flash device".
-  7) Now you can connect in Menu and config the MobaStation.
+  7) Now you can connect to MobaStation in Menu
+  8) Open the config window in Menu.
     <p align="center">
       <img src="/ConfigTool-images/ConfigTool_config.PNG" width="500"> 
-    </p>
+    </p>   
+   8) Enter your settigns. Press "Write config" and voilà. Your MobaStation is now ready to drive your trains!
