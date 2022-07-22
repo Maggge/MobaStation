@@ -19,7 +19,7 @@ Coming soon: XpressNet to connect Roco multiMAUS controller.
   1) Build the MobaStation:</br>
       1)For Network connectivity are different possibilities:
         - <a href="https://www.makershop.de/plattformen/arduino/mega2560-wifi-r3"/>Arduino Mega with integrated Wifi-Module </a>(the ESP needs to  be flashed with the AT 1.7 firmware)
-        - Arduino Mega with ESP-01 connected to Serial1 (the ESP needs to  be flashed with the AT 1.7 firmware)
+        - Arduino Mega with ESP-01 connected to Serial3 (the ESP needs to  be flashed with the AT 1.7 firmware)
         - Arduino Mega with Ethernet Modul
         - Arduino Mega with Ethernet and Wifi (the ESP needs to  be flashed with the AT 1.7 firmware)
                  
@@ -27,7 +27,7 @@ Coming soon: XpressNet to connect Roco multiMAUS controller.
 
       3)Optional: MCP2515 Can-Bus-Modul for MobaBus  
 
-      4)Optional: MAX485 RS485-Modul for XPressNet (at the moment not activated)
+      4)Optional: MAX485 RS485-Modul connected to Serial1 for XPressNet (at the moment not activated)
       
       5)Optional: Track-Power-Button and Track-Status-Led or combined Button with integrated Led
       
