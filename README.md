@@ -36,9 +36,8 @@ Coming soon: XpressNet to connect Roco multiMAUS controller.
       <p align="center">
         <img src="/schematics/Mega-RS485.jpg" width="500"> 
       </p>
-      5)Optional: Track-Power-Button and Track-Status-Led or combined Button with integrated Led
+      5)Optional: Track-Power-Button (connected to Pin 24 and GND) and Track-Status-Led (connected to Pin 25 and GND). I use a Button with integrated LED-Ring
       
-  
   
   2) Download the latest <a href=https://github.com/Maggge/MobaStation/releases>Release<a> (not the source code!) an extract it. 
   3) Connect the Arduino Mega to USB.
