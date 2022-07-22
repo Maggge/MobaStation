@@ -46,11 +46,11 @@ Coming soon: XpressNet to connect Roco multiMAUS controller.
     <p align="center">
       <img src="/ConfigTool-images/ConfigTool.PNG" width="500"> 
     </p>
-  5) Open Flash device in Menu.
+  5) Open "Flash device" in Menu.
     <p align="center">
       <img src="/ConfigTool-images/ConfigTool_flash.PNG" width="500"> 
     </p>
-  6) Select the COM Port of the Arduino and the firmware contained in Package and Flash device.
+  6) Select the COM Port of the Arduino and the firmware contained in Package and "Flash device".
   7) Now you can connect in Menu and config the MobaStation.
     <p align="center">
       <img src="/ConfigTool-images/ConfigTool_config.PNG" width="500"> 
