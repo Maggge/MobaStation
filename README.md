@@ -22,24 +22,36 @@ Coming soon: XpressNet to connect Roco multiMAUS controller.
         - Arduino Mega with ESP-01 connected to Serial3 (the ESP needs to  be flashed with the AT 1.7 firmware)
         - Arduino Mega with Ethernet Modul
         - Arduino Mega with Ethernet and Wifi (the ESP needs to  be flashed with the AT 1.7 firmware)
+        <p align="center">
+          <img src="/schematics/Mega-Wifi-Ethernet.jpg" width="500"> 
+        </p>
                  
       2)Arduino Motorshield for DCC      
-
+    
       3)Optional: MCP2515 Can-Bus-Modul for MobaBus  
-
+      <p align="center">
+        <img src="/schematics/Mega-Can.jpg" width="500"> 
+      </p>
       4)Optional: MAX485 RS485-Modul connected to Serial1 for XPressNet (at the moment not activated)
-      
+      <p align="center">
+        <img src="/schematics/Mega-RS485.jpg" width="500"> 
+      </p>
       5)Optional: Track-Power-Button and Track-Status-Led or combined Button with integrated Led
       
-      6)Connect the Modules together
-        <p align="center">
-          <img src="/Housing/MobaStation-schematics.jpg" width="500">
-        </p>
   
   
   2) Download the latest <a href=https://github.com/Maggge/MobaStation/releases>Release<a> (not the source code!) an extract it. 
   3) Connect the Arduino Mega to USB.
   4) Open the MobaStation Config Tool.
+    <p align="center">
+      <img src="/ConfigTool-images/ConfigTool.jpg" width="500"> 
+    </p>
   5) Open Flash device in Menu.
+    <p align="center">
+      <img src="/ConfigTool-images/ConfigTool_flash.jpg" width="500"> 
+    </p>
   6) Select the COM Port of the Arduino and the firmware contained in Package and Flash device.
   7) Now you can connect in Menu and config the MobaStation.
+    <p align="center">
+      <img src="/ConfigTool-images/ConfigTool_config.jpg" width="500"> 
+    </p>
