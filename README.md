@@ -25,11 +25,13 @@ Coming soon: XpressNet to connect Roco multiMAUS controller.
                  
       2)Arduino Motorshield for DCC      
 
-      3)MCP2515 Can-Bus-Modul for MobaBus (optional)   
+      3)Optional: MCP2515 Can-Bus-Modul for MobaBus  
 
-      4)MAX485 RS485-Modul for XPressNet (optional, at the moment not activated)
+      4)Optional: MAX485 RS485-Modul for XPressNet (at the moment not activated)
       
-      5)Connect the Modules together
+      5)Optional: Track-Power-Button and Track-Status-Led or combined Button with integrated Led
+      
+      6)Connect the Modules together
         <p align="center">
           <img src="/Housing/MobaStation-schematics.jpg" width="500">
         </p>
