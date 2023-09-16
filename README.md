@@ -40,7 +40,7 @@ Coming soon: XpressNet to connect Roco multiMAUS controller.
       6)Optional: Track-Voltage meter (Voltage divider on MotorDriver Input. Connected to Pin A15. Resistor - values will follow).
       
   
-  2) Download the latest <a href=https://github.com/Maggge/MobaStation/releases>Release<a> (not the source code!) an extract it. 
+  2) Download the latest <a href=https://github.com/Maggge/MobaStation/releases>Release<a> (not the source code!) and extract it. 
   3) Connect the Arduino Mega to USB.
   4) Open the MobaStation Config Tool.
     <p align="center">
