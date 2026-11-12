@@ -96,6 +96,22 @@ void MobaStation::attachMobaBus(MobaBus *m){
   mobaBus = m;
 }
 
+//route a turnout command to DCC and/or MobaBus according to the current turnout mode
+void MobaStation::setTurnout(uint16_t addr, bool dir, bool power){
+  if(turnoutMode == DCC_Only || (turnoutMode == Combined && addr <= dccAddrRange)){
+    DCC::setAccessory(addr, dir, power);
+    broadcastTurnout(addr, dir);
+  }
+  if(turnoutMode == MobaBus_Only || (turnoutMode == Combined && addr > dccAddrRange)){
+    if(mobaBus != NULL){
+      uint8_t data[2];
+      data[0] = dir;
+      data[1] = power;
+      mobaBus->sendPkg(ACCESSORIE, addr, SET, 2, data);
+    }
+  }
+}
+
 void MobaStation::loop(){
   uint32_t currentTime = millis();
 
@@ -180,11 +196,12 @@ void MobaStation::processMobaBus(){
     case ACCESSORIE:
       broadcastTurnout(pkg.meta.address , pkg.data[0]);
       break; 
-    case FEEDBACK:
+    case FEEDBACK:{
       rBus[pkg.meta.address - 1] = pkg.data[0];
       uint8_t group = (pkg.meta.address - 1) / 10;
       broadcastRbus(group);
       break;
+    }
     default:
       break;
     }
@@ -258,7 +275,7 @@ void MobaStation::broadcastTurnout(uint16_t addr, uint8_t dir, IPAddress *force)
   }
 
   for(int i = 0; i < z21clientMAX; i++){
-    if(z21Clients[i].time > 0 && ((Z21bcAll_s & z21Clients[i].BCFlag) > 0 || *force == z21Clients[i].ip)){
+    if(z21Clients[i].time > 0 && ((Z21bcAll_s & z21Clients[i].BCFlag) > 0 || (force != NULL && *force == z21Clients[i].ip))){
       sendLanPacket(z21Clients[i].ip, 0x09, LAN_X_HEADER, data, true);
     }
   }
@@ -607,17 +624,7 @@ void MobaStation::processLanXPacket(UdpPacket *packet){
     Serial.print(" - ");
     Serial.println(power);
     #endif
-    if(turnoutMode == DCC_Only || (turnoutMode == Combined && addr <= dccAddrRange)){
-      DCC::setAccessory(addr, dir, power); //Not tested yet!!
-      broadcastTurnout(addr , dir);
-    }
-    if(turnoutMode == MobaBus_Only || (turnoutMode == Combined && addr > dccAddrRange)){
-      if(mobaBus != NULL){
-        data[0] = dir;
-        data[1] = power;
-        mobaBus->sendPkg(ACCESSORIE, addr, SET, 2, data);
-      }
-    }
+    setTurnout(addr, dir, power);
     break;  
     }
   case LAN_X_SET_EXT_ACCESSORY: {
@@ -790,6 +797,7 @@ uint8_t MobaStation::addClientToSlot(IPAddress ip, uint8_t BCFlag){
             slot = i;
         }
     } 
+    if(slot >= z21clientMAX) return 0; //no free client slot!
     z21Clients[slot].ip = ip;
     z21Clients[slot].time = z21ActTimeIP;
 
@@ -924,7 +932,7 @@ void MobaStation::broadcastSystemInfo(IPAddress *force){
   }
 }
 
-void MobaStation::setRailPower(bool power, IPAddress *client = NULL){
+void MobaStation::setRailPower(bool power, IPAddress *client){
   railPower = power;
   #ifndef ESP32
   POWERMODE p = power ? POWERMODE::ON : POWERMODE::OFF;
@@ -959,7 +967,7 @@ void MobaStation::broadcastRailState(IPAddress * force){
     if((z21Clients[i].time > 0 && (Z21bcAll_s & z21Clients[i].BCFlag) > 0) || (force != NULL && *force == z21Clients[i].ip)){
       #ifdef DEBUG
       Serial.print("Send RailState to ");
-      Serial.println(ip);
+      Serial.println(z21Clients[i].ip);
       #endif
       sendLanPacket(z21Clients[i].ip, 0x07, LAN_X_HEADER, data, true);
     }
@@ -1036,11 +1044,11 @@ void MobaStation::setLocoAbo(IPAddress client, uint16_t locoAddr){
   }
 }
 
-void MobaStation::broadcastLocoInfo(uint16_t addr, IPAddress *force = NULL){
+void MobaStation::broadcastLocoInfo(uint16_t addr, IPAddress *force){
   uint8_t data[9];
   uint8_t len = getLocoInfo(addr, data) + 5;
   for(uint8_t i = 0; i < z21clientMAX; i++){
-    if(z21Clients[i].time == 0) break;
+    if(z21Clients[i].time == 0) continue;
     if(force != NULL && *force == z21Clients[i].ip){
       #ifdef DEBUG
       Serial.print("Force Loco Info to");
@@ -1067,16 +1075,7 @@ void MobaStation::broadcastLocoInfo(uint16_t addr, IPAddress *force = NULL){
 
   if(XpressNet != NULL){
     unsigned long func = DCC::getFns(addr);
-    uint8_t speedStepsInfo = DCC::getSpeedSteps(addr);
-    if(speedStepsInfo == 14){
-      speedStepsInfo = 0;
-    }
-    else if(speedStepsInfo == 28){
-      speedStepsInfo = 2;
-    }
-    else{
-      speedStepsInfo = 4;//default value; DCC 128 Fahrstufen
-    }
+    uint8_t speedStepsInfo = Loco128; //DCC library always reports speed in 128 steps -> wire must say 128 too
 
     uint8_t speed = DCC::getThrottleSpeed(addr);
     speed = DCC::getThrottleDirection(addr) << 7 | speed;
@@ -1149,7 +1148,7 @@ void MobaStation::rBusGetData(uint8_t group, uint8_t *data){
   }
 }
 
-void MobaStation::setTurnoutMode(TurnoutMode mode, uint16_t addrRange = 2047){
+void MobaStation::setTurnoutMode(TurnoutMode mode, uint16_t addrRange){
   turnoutMode = mode;
   dccAddrRange = addrRange;
 }
@@ -1188,16 +1187,7 @@ void notifyXNetgiveLocoMM(uint8_t UserOps, uint16_t Address){
   Serial.println("MM get Loco Info");
   #endif
   unsigned long func = DCC::getFns(Address);
-  uint8_t speedStepsInfo = DCC::getSpeedSteps(Address);
-  if(speedStepsInfo == 14){
-    speedStepsInfo = 0;
-  }
-  else if(speedStepsInfo == 28){
-    speedStepsInfo = 2;
-  }
-  else{
-    speedStepsInfo = 4;//default value; DCC 128 Fahrstufen
-  }
+  uint8_t speedStepsInfo = Loco128; //speed is always reported in 128 steps by the DCC library
   MobaStation::addXpressNetClient(UserOps, Address);
   uint8_t speed = DCC::getThrottleSpeed(Address);
   speed = DCC::getThrottleDirection(Address) << 7 | speed;
@@ -1212,16 +1202,7 @@ void notifyXNetgiveLocoInfo(uint8_t UserOps, uint16_t Address) {
   Serial.println(Address);
   #endif
   unsigned long func = DCC::getFns(Address);
-  uint8_t speedStepsInfo = DCC::getSpeedSteps(Address);
-  if(speedStepsInfo == 14){
-    speedStepsInfo = 0;
-  }
-  else if(speedStepsInfo == 28){
-    speedStepsInfo = 2;
-  }
-  else{
-    speedStepsInfo = 4;//default value; DCC 128 Fahrstufen
-  }
+  uint8_t speedStepsInfo = Loco128; //speed is always reported in 128 steps by the DCC library
   MobaStation::addXpressNetClient(UserOps, Address);
   uint8_t speed = DCC::getThrottleSpeed(Address);
   speed = DCC::getThrottleDirection(Address) << 7 | speed;
@@ -1252,6 +1233,28 @@ void notifyXNetPower(uint8_t State) {
 }
 
 //--------------------------------------------------------------
+//Convert XpressNet 14 speed-step format to DCC 128 speed steps
+static uint8_t xnetSpeed14to128(uint8_t xSpeed, bool &dir){
+  dir = (xSpeed >= 0x10);          //0x01-0x0F = reverse, 0x11-0x1F = forward
+  uint8_t n = xSpeed & B00001111;
+  if(n <= 1) return 0;             //emergency stop / stop
+  uint16_t s = 2 + (uint16_t)(n - 2) * 124 / 13; //DCC 14 -> 128 speed steps
+  if(s > 126) s = 126;
+  return (uint8_t)s;
+}
+
+//--------------------------------------------------------------
+//Convert XpressNet 27/28 speed-step format to DCC 128 speed steps
+static uint8_t xnetSpeed28to128(uint8_t xSpeed, bool &dir){
+  dir = (xSpeed >= 0x10);          //0x01-0x0F = reverse, 0x11-0x1F = forward
+  uint8_t n = xSpeed & B00001111;
+  if(n == 0 || n == 1) return 0;   //stop / emergency stop
+  uint16_t s = 2 + (uint16_t)(n - 1) * 124 / 14; //DCC 28 -> 128 speed steps
+  if(s > 126) s = 126;
+  return (uint8_t)s;
+}
+
+//--------------------------------------------------------------
 void notifyXNetLocoDrive14(uint16_t Address, uint8_t Speed) {
   #ifdef DEBUG
   Serial.print("XNet A:");
@@ -1259,6 +1262,24 @@ void notifyXNetLocoDrive14(uint16_t Address, uint8_t Speed) {
   Serial.print(", S14:");
   Serial.println(Speed, BIN);
   #endif
+  bool dir;
+  uint8_t speed = xnetSpeed14to128(Speed, dir);
+  DCC::setThrottle(Address, speed, 128, dir);
+  MobaStation::broadcastLocoInfo(Address);
+}
+
+//--------------------------------------------------------------
+void notifyXNetLocoDrive27(uint16_t Address, uint8_t Speed) {
+  #ifdef DEBUG
+  Serial.print("XNet A:");
+  Serial.print(Address);
+  Serial.print(", S27:");
+  Serial.println(Speed, BIN);
+  #endif
+  bool dir;
+  uint8_t speed = xnetSpeed28to128(Speed, dir);
+  DCC::setThrottle(Address, speed, 128, dir);
+  MobaStation::broadcastLocoInfo(Address);
 }
 
 //--------------------------------------------------------------
@@ -1269,6 +1290,10 @@ void notifyXNetLocoDrive28(uint16_t Address, uint8_t Speed) {
   Serial.print(", S28:");
   Serial.println(Speed, BIN);
   #endif
+  bool dir;
+  uint8_t speed = xnetSpeed28to128(Speed, dir);
+  DCC::setThrottle(Address, speed, 128, dir);
+  MobaStation::broadcastLocoInfo(Address);
 }
 
 //--------------------------------------------------------------
@@ -1279,6 +1304,10 @@ void notifyXNetLocoDrive128(uint16_t Address, uint8_t Speed) {
   Serial.print(", S128:");
   Serial.println(Speed, BIN);
   #endif
+  bool dir = (Speed & B10000000);  //bit 7 = direction
+  uint8_t speed = Speed & B01111111;
+  DCC::setThrottle(Address, speed, 128, dir);
+  MobaStation::broadcastLocoInfo(Address);
 }
 
 //--------------------------------------------------------------
@@ -1289,9 +1318,10 @@ void notifyXNetLocoFunc1(uint16_t Address, uint8_t Func1) {
   Serial.print(", F1:");
   Serial.println(Func1, BIN);
   #endif
-  DCC::setFn(Address, 0, (bool)(Func1 >> 4 | B0000001));
+  //Gruppe 1: 0 0 0 F0 F4 F3 F2 F1
+  DCC::setFn(Address, 0, bitRead(Func1, 4));
   for(int i = 0; i < 4; i++){
-    DCC::setFn(Address, i+1, (bool)(Func1 >> i | B0000001));
+    DCC::setFn(Address, i+1, bitRead(Func1, i));
   }
   MobaStation::broadcastLocoInfo(Address);
 }
@@ -1359,6 +1389,10 @@ void notifyXNetTrnt(uint16_t Address, uint8_t data) {
     Serial.print(", P:");
     Serial.println(data & 0x01);
     #endif
+    //data = 0000 ABBP: A = Spulenspannung EIN, P = Ausgang (0 = gerade, 1 = abzweigen)
+    bool dir = data & B00000001;
+    bool power = bitRead(data, 3);
+    MobaStation::setTurnout(Address, dir, power);
   }
 }
 
@@ -1375,4 +1409,71 @@ void notifyXNetTrntInfo(uint8_t UserOps, uint8_t Address, uint8_t data) {
   else bitWrite(pos, 3, 1);    
 */  
   MobaStation::XpressNet->SetTrntStatus(UserOps, Address, pos);
+}
+//----------   Xpress-Net CV / POM   ----------
+
+static uint16_t xnetCvPending = 0;
+
+static void xnetCvReadCallback(int16_t result){
+  if(MobaStation::XpressNet == NULL) return;
+  if(result < 0)
+    MobaStation::XpressNet->setCVNack();
+  else
+    MobaStation::XpressNet->setCVReadValue(xnetCvPending, (uint8_t)result);
+}
+
+static void xnetCvWriteCallback(int16_t result){
+  if(MobaStation::XpressNet == NULL) return;
+  if(result < 0)
+    MobaStation::XpressNet->setCVNack();
+}
+
+//0x22 0x15 Direct Mode CV read request, cvAdr is 0 based
+void notifyXNetDirectReadCV(uint16_t cvAdr){
+  #ifdef DEBUG
+  Serial.print("XNet CV read: ");
+  Serial.println(cvAdr + 1);
+  #endif
+  xnetCvPending = cvAdr;
+  DCC::readCV(cvAdr + 1, xnetCvReadCallback);
+}
+
+//0x23 0x16 Direct Mode CV write request, cvAdr is 0 based
+void notifyXNetDirectCV(uint16_t cvAdr, uint8_t data){
+  #ifdef DEBUG
+  Serial.print("XNet CV write: ");
+  Serial.print(cvAdr + 1);
+  Serial.print(" = ");
+  Serial.println(data);
+  #endif
+  xnetCvPending = cvAdr;
+  DCC::writeCVByte(cvAdr + 1, data, xnetCvWriteCallback);
+}
+
+//POM (Operations Mode) write byte
+void notifyXNetPOMwriteByte(uint16_t Adr, uint16_t CV, uint8_t data){
+  #ifdef DEBUG
+  Serial.print("XNet POM byte: Addr ");
+  Serial.print(Adr);
+  Serial.print(" CV ");
+  Serial.print(CV);
+  Serial.print(" = ");
+  Serial.println(data);
+  #endif
+  DCC::writeCVByteMain(Adr, CV, data);
+}
+
+//POM (Operations Mode) write bit, data = 0 0 0 P MMM CCCC (P = value, CCCC = bit number)
+void notifyXNetPOMwriteBit(uint16_t Adr, uint16_t CV, uint8_t data){
+  #ifdef DEBUG
+  Serial.print("XNet POM bit: Addr ");
+  Serial.print(Adr);
+  Serial.print(" CV ");
+  Serial.print(CV);
+  Serial.print(" bit ");
+  Serial.println(data & B00001111);
+  #endif
+  uint8_t bitNum = data & B00000111;
+  bool value = bitRead(data, 3);
+  DCC::writeCVBitMain(Adr, CV, bitNum, value);
 }

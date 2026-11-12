@@ -188,6 +188,8 @@ public:
 
     static void attachMobaBus(MobaBus *m);    
 
+    static void setTurnout(uint16_t addr, bool dir, bool power);
+
     /**
      * begin - initialize
      * 

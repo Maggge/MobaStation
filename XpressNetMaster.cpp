@@ -63,7 +63,7 @@ XpressNetMasterClass::XpressNetMasterClass()
 	
 	XNetDataReady = false;	//keine Daten empfangen!
 	XNet_state = XNet_get_callbyte;	//set the start state
-	XNetclear();	//alte Nachricht löschen
+	XNetclear();	//alte Nachricht lï¿½schen
 	XNetMsgBuffer[XNetBufferlength] = 0x00;	//reset buffer
 	
 	XNetCVAdr = 0;	//no CV read
@@ -112,13 +112,10 @@ void XpressNetMasterClass::setup(uint8_t FStufen, uint8_t  XControl)  //Initiali
 	 *  But UCSZ00, UCSZ01 are in Register UCSR0C).
 	 */
 	active_object = this;		//hold Object to call it back in ISR
-	 
-#else 
-	#define RAW_DATA_MODE
-	
-#endif	 
-	 
-
+#endif
+	//NOTE: on non-AVR boards this library only works in RAW_DATA_MODE,
+	//which must be defined in XpressNetMaster.h BEFORE this file is compiled
+	//(a #define here comes too late for the #if checks in this file!)
 }
 
 // Public Methods //////////////////////////////////////////////////////////////
@@ -149,7 +146,7 @@ void XpressNetMasterClass::update(void)
 		case XNet_receive_data:	//read client data, max 500ms
 			if (micros() - XSendCount >= XNetTimeReadData) {	//Timeout?
 				XNet_state = XNet_get_callbyte;
-				XNetclear();	//alte Nachricht löschen
+				XNetclear();	//alte Nachricht lï¿½schen
 				XNetMsgBuffer[XNetBufferlength] = 0x00;	//reset buffer
 				break;
 			}
@@ -167,7 +164,7 @@ void XpressNetMasterClass::update(void)
 					RAW_out(XNetMsg, (XNetMsg[XNetheader] & 0x0F) + 2);	//send RAW data
 				#endif
 			}
-			XNetclear();	//alte Nachricht löschen
+			XNetclear();	//alte Nachricht lï¿½schen
 			if (XNetSlaveMode == 0x00) {		//MASTER MODE
 				XNet_state = XNet_send_data;
 				XNetSendNext();	//start sending out by interrupt
@@ -218,7 +215,7 @@ bool XpressNetMasterClass::XNetCheckXOR(void) {
 	if (rxXOR == 0x00) {	//XOR is 0x00?
 		return true;
 	}
-	//Übertragungsfehler:
+	//ï¿½bertragungsfehler:
 	if (XNetSlaveMode == 0x00) {		//MASTER MODE
 		uint8_t ERR[] = {DirectedOps, 0x61, 0x80, 0xE1 };	
 		XNetsend(ERR, 4);
@@ -236,11 +233,13 @@ void XpressNetMasterClass::RAW_input(byte *dataString, byte byteCount)
 	XNetSlaveMode = 0;	//Master-Mode
 	
 	//kopieren der Nachricht
+	if (byteCount > XNetMaxDataLength)
+		byteCount = XNetMaxDataLength;
 	for (byte i = 0; i < byteCount; i ++) {
 		XNetMsg[i] = dataString[i];
 	}
 
-	XNetAnalyseReceived;
+	XNetAnalyseReceived();
 }
 #endif
 
@@ -344,7 +343,7 @@ void XpressNetMasterClass::XNetAnalyseReceived(void) {		//work on received data
 					#endif
 					if (SlotLokUse[DirectedOps & 0x1F] == 0xFFFF)
 						SlotLokUse[DirectedOps & 0x1F] = 0;	//mark Slot as activ
-					//XNetclear();	//alte Nachricht löschen
+					//XNetclear();	//alte Nachricht lï¿½schen
 				}
 				break;
 			case 0x22: //Start Programming
@@ -360,7 +359,7 @@ void XpressNetMasterClass::XNetAnalyseReceived(void) {		//work on received data
 					break;
 				}
 				unknown(); //unbekannte Anfrage
-				//XNetclear();	//alte Nachricht löschen	
+				//XNetclear();	//alte Nachricht lï¿½schen	
 				break;
 			case 0x23:
 				if (XNetMsg[XNetdata1] == 0x12) { //Register Mode write request (Register Mode) 
@@ -400,7 +399,7 @@ void XpressNetMasterClass::XNetAnalyseReceived(void) {		//work on received data
 					break;
 				}
 				unknown(); //unbekannte Anfrage
-				//XNetclear();	//alte Nachricht löschen
+				//XNetclear();	//alte Nachricht lï¿½schen
 				break;
 			case 0xE3: {
 				if (XNetSlaveMode == 0x00)	{
@@ -433,7 +432,7 @@ void XpressNetMasterClass::XNetAnalyseReceived(void) {		//work on received data
 						default: unknown(); //unbekannte Anfrage
 					}
 				}
-				//XNetclear();	//alte Nachricht löschen
+				//XNetclear();	//alte Nachricht lï¿½schen
 				break;
 				}
 			case 0xE4: {	//Fahrbefehle
@@ -481,7 +480,7 @@ void XpressNetMasterClass::XNetAnalyseReceived(void) {		//work on received data
 			case 0x42:	//Accessory Decoder information request
 				if (notifyXNetTrntInfo && XNetSlaveMode == 0x00)
 					notifyXNetTrntInfo(DirectedOps, XNetMsg[XNetdata1], XNetMsg[XNetdata2]);
-				//XNetclear();	//alte Nachricht löschen
+				//XNetclear();	//alte Nachricht lï¿½schen
 				break;
 			case 0x52:	//Accessory Decoder operation request
 				if (notifyXNetTrnt)
@@ -490,7 +489,7 @@ void XpressNetMasterClass::XNetAnalyseReceived(void) {		//work on received data
 					//A = Weichenausgang(Spulenspannung EIN/AUS)
 					//BB = Adresse des Dekoderport 1..4
 					//P = Ausgang (Gerade = 0 / Abzweigen = 1)
-				//XNetclear();	//alte Nachricht löschen
+				//XNetclear();	//alte Nachricht lï¿½schen
 				break;
 			default:  //Befehl in Zentrale nicht vorhanden
 				unknown(); //unbekannte Anfrage
@@ -533,7 +532,7 @@ void XpressNetMasterClass::XNetAnalyseReceived(void) {		//work on received data
 				}
 			}
 			else if ((XNetMsg[XNetheader] & 0xF0) == 0x40) {
-				//Rückmeldung Schaltinformation
+				//Rï¿½ckmeldung Schaltinformation
 				byte len = (XNetMsg[XNetheader] & 0x0F) / 2;	//each Adr and Data
 				for (byte i = 1; i <= len; i++) {
 					notifyXNetFeedback((XNetMsg[XNetheader+(i*2)-1] << 2) | ((XNetMsg[XNetheader+(i*2)] & B110) >> 1), XNetMsg[XNetheader+(i*2)]);
@@ -619,7 +618,7 @@ void XpressNetMasterClass::unknown(void)		//unbekannte Anfrage
 //--------------------------------------------------------------------------------------------
 void XpressNetMasterClass::getNextXNetAdr(void)
 {
-	XNetAdr++;		//nächste Adresse im XNet
+	XNetAdr++;		//nï¿½chste Adresse im XNet
 	if (XNetAdr > 31) {	//wenn letzte erreicht von Beginn!
 		//search for used slots to call them more then unused:
 		while((SlotLokUse[XNetAdr % 32] == 0xFFFF) && (XNetAdr > 31)) {	//slot used an loco address?
@@ -707,7 +706,7 @@ void XpressNetMasterClass::setPower(byte Power)
 }
 
 //--------------------------------------------------------------------------------------------
-//Rückmeldung verteilen
+//Rï¿½ckmeldung verteilen
 void XpressNetMasterClass::setBCFeedback(byte data1, byte data2) 
 {
 	uint8_t Feedback[] = { GENERAL_BROADCAST, 0x42, data1, data2, 0x00};
@@ -805,7 +804,7 @@ void XpressNetMasterClass::setSpeed(uint16_t Adr, uint8_t Steps, uint8_t Speed) 
 		v |= (Speed >> 4) & 0x01;	//Addition Speed Bit
 		v |= 0x80 & Speed;		//Dir
 	}
-	uint8_t LocoInfo[] = {0x00, 0xE4, 0x13, 0x00, 0x00, v, 0x00 }; //default to 128 Steps!
+	uint8_t LocoInfo[] = {GENERAL_BROADCAST, 0xE4, 0x13, 0x00, 0x00, v, 0x00 }; //default to 128 Steps!
 	switch (Steps) {
 		case 14: LocoInfo[2] = 0x10; break;
 		case 27: LocoInfo[2] = 0x11; break;
@@ -822,7 +821,7 @@ void XpressNetMasterClass::setSpeed(uint16_t Adr, uint8_t Steps, uint8_t Speed) 
 //--------------------------------------------------------------------------------------------
 //Gruppe 1: 0 0 0 F0 F4 F3 F2 F1
 void XpressNetMasterClass::setFunc0to4(uint16_t Adr, uint8_t G1) { 
-	uint8_t LocoInfo[] = {0x00, 0xE4, 0x20, 0x00, 0x00, G1, 0x00 };
+	uint8_t LocoInfo[] = {GENERAL_BROADCAST, 0xE4, 0x20, 0x00, 0x00, G1, 0x00 };
 	if (Adr > 99) //Xpressnet long addresses (100 to 9999: AH/AL = 0xC064 to 0xE707)
 		LocoInfo[3] = (Adr >> 8) | 0xC0;
 	else LocoInfo[3] = Adr >> 8;   //short addresses (0 to 99: AH = 0x0000 and AL = 0x0000 to 0x0063)
@@ -834,7 +833,7 @@ void XpressNetMasterClass::setFunc0to4(uint16_t Adr, uint8_t G1) {
 //--------------------------------------------------------------------------------------------
 //Gruppe 2: 0 0 0 0 F8 F7 F6 F5 
 void XpressNetMasterClass::setFunc5to8(uint16_t Adr, uint8_t G2) { 
-	uint8_t LocoInfo[] = {0x00, 0xE4, 0x21, 0x00, 0x00, G2, 0x00 };
+	uint8_t LocoInfo[] = {GENERAL_BROADCAST, 0xE4, 0x21, 0x00, 0x00, G2, 0x00 };
 	if (Adr > 99) //Xpressnet long addresses (100 to 9999: AH/AL = 0xC064 to 0xE707)
 		LocoInfo[3] = (Adr >> 8) | 0xC0;
 	else LocoInfo[3] = Adr >> 8;   //short addresses (0 to 99: AH = 0x0000 and AL = 0x0000 to 0x0063)
@@ -846,7 +845,7 @@ void XpressNetMasterClass::setFunc5to8(uint16_t Adr, uint8_t G2) {
 //--------------------------------------------------------------------------------------------
 //Gruppe 3: 0 0 0 0 F12 F11 F10 F9 
 void XpressNetMasterClass::setFunc9to12(uint16_t Adr, uint8_t G3) { 
-	uint8_t LocoInfo[] = {0x00, 0xE4, 0x22, 0x00, 0x00, G3, 0x00 };
+	uint8_t LocoInfo[] = {GENERAL_BROADCAST, 0xE4, 0x22, 0x00, 0x00, G3, 0x00 };
 	if (Adr > 99) //Xpressnet long addresses (100 to 9999: AH/AL = 0xC064 to 0xE707)
 		LocoInfo[3] = (Adr >> 8) | 0xC0;
 	else LocoInfo[3] = Adr >> 8;   //short addresses (0 to 99: AH = 0x0000 and AL = 0x0000 to 0x0063)
@@ -858,7 +857,7 @@ void XpressNetMasterClass::setFunc9to12(uint16_t Adr, uint8_t G3) {
 //--------------------------------------------------------------------------------------------
 //Gruppe 4: F20 F19 F18 F17 F16 F15 F14 F13  
 void XpressNetMasterClass::setFunc13to20(uint16_t Adr, uint8_t G4) { 
-	uint8_t LocoInfoMM[] = {0x00, 0xE4, 0xF3, 0x00, 0x00, G4, 0x00 };	//normal: 0x23!
+	uint8_t LocoInfoMM[] = {GENERAL_BROADCAST, 0xE4, 0xF3, 0x00, 0x00, G4, 0x00 };	//normal: 0x23!
 	if (Adr > 99) //Xpressnet long addresses (100 to 9999: AH/AL = 0xC064 to 0xE707)
 		LocoInfoMM[3] = (Adr >> 8) | 0xC0;
 	else LocoInfoMM[3] = Adr >> 8;   //short addresses (0 to 99: AH = 0x0000 and AL = 0x0000 to 0x0063)
@@ -866,7 +865,7 @@ void XpressNetMasterClass::setFunc13to20(uint16_t Adr, uint8_t G4) {
 	getXOR(LocoInfoMM, 7);
 	XNetsend(LocoInfoMM, 7);
 
-	LocoInfoMM[0] = 0x00;
+	LocoInfoMM[0] = GENERAL_BROADCAST;
 	LocoInfoMM[1] = 0xE4;
 	LocoInfoMM[2] = 0x23; 	//MultiMaus only
 	LocoInfoMM[3] = Adr >> 8;
@@ -879,7 +878,7 @@ void XpressNetMasterClass::setFunc13to20(uint16_t Adr, uint8_t G4) {
 //--------------------------------------------------------------------------------------------
 //Gruppe 5: F28 F27 F26 F25 F24 F23 F22 F21  
 void XpressNetMasterClass::setFunc21to28(uint16_t Adr, uint8_t G5) { 
-	uint8_t LocoInfo[] = {0x00, 0xE4, 0x28, 0x00, 0x00, G5, 0x00 };
+	uint8_t LocoInfo[] = {GENERAL_BROADCAST, 0xE4, 0x28, 0x00, 0x00, G5, 0x00 };
 	if (Adr > 99) //Xpressnet long addresses (100 to 9999: AH/AL = 0xC064 to 0xE707)
 		LocoInfo[3] = (Adr >> 8) | 0xC0;
 	else LocoInfo[3] = Adr >> 8;   //short addresses (0 to 99: AH = 0x0000 and AL = 0x0000 to 0x0063)
@@ -936,7 +935,7 @@ void XpressNetMasterClass::SetTrntPos(uint16_t Address, uint8_t state, uint8_t a
 	//A = Weichenausgang(Spulenspannung EIN/AUS)
 	//BB = Adresse des Dekoderport 1..4
 	//P = Ausgang (Gerade = 0 / Abzweigen = 1)
-	uint8_t TrntInfo[] = {0x00, 0x52, 0x00, 0x00, 0x00 };
+	uint8_t TrntInfo[] = {GENERAL_BROADCAST, 0x52, 0x00, 0x00, 0x00 };
 	TrntInfo[2] = Address >> 2;
 	TrntInfo[3] = 0x80;
 	TrntInfo[3] |= (Address & 0x03) << 1;
@@ -1058,7 +1057,7 @@ inline void XpressNetMasterClass::handle_TX_interrupt()
 {
   if (active_object)
   {
-    active_object->XNetSendNext();	//nächste Byte Senden
+    active_object->XNetSendNext();	//nï¿½chste Byte Senden
   }
 }
 #endif
@@ -1248,7 +1247,7 @@ void XpressNetMasterClass::XNetReceive(void)
 }
 
 //--------------------------------------------------------------------------------------------
-//Löschen des letzten gesendeten Befehls
+//Lï¿½schen des letzten gesendeten Befehls
 void XpressNetMasterClass::XNetclear(void)
 {
 	//Reset Message
