@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  #arduino-cli looks for libraries in directories.user, sketches are compiled from the workspace
+  ARDUINO_DIRECTORIES_DATA: ${{ github.workspace }}/arduino
+  ARDUINO_DIRECTORIES_USER: ${{ github.workspace }}/arduino
+
+jobs:
+  compile:
+    name: ${{ matrix.example }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        board: [arduino:avr:mega]
+        example:
+          - examples/MobaStationEth
+          - examples/MobaStationWiFi
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install arduino-cli
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR="$HOME/bin" sh
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+      - name: Install platform and libraries
+        run: |
+          arduino-cli core update-index
+          arduino-cli core install arduino:avr@1.8.8
+          arduino-cli lib install Ethernet Servo mcp_can "Adafruit PWM Servo Driver Library"
+
+      - name: Install DCC and MobaBus
+        run: |
+          mkdir -p "$ARDUINO_DIRECTORIES_USER/libraries"
+          git clone --depth 1 https://github.com/Maggge/DCC "$ARDUINO_DIRECTORIES_USER/libraries/DCC"
+          git clone --depth 1 https://github.com/Maggge/MobaBus "$ARDUINO_DIRECTORIES_USER/libraries/MobaBus"
+
+          #both repositories are plain git repos without library.properties,
+          #arduino-cli needs one to find them
+          cat > "$ARDUINO_DIRECTORIES_USER/libraries/DCC/library.properties" <<'EOF'
+          name=DCC
+          version=0.0.0-git
+          author=Chris Harlow, Fred Decker
+          maintainer=Markus Mair
+          sentence=DCC library for Arduino based on DCC++ EX
+          paragraph=DCC waveform generator and API extracted from CommandStation-EX
+          category=Device Control
+          url=https://github.com/Maggge/DCC
+          architectures=avr
+          includes=DCC.h
+          EOF
+          cat > "$ARDUINO_DIRECTORIES_USER/libraries/MobaBus/library.properties" <<'EOF'
+          name=MobaBus
+          version=0.0.0-git
+          author=Markus Mair
+          maintainer=Markus Mair
+          sentence=Arduino based CAN bus for digital model railroad
+          paragraph=MobaBus modules for turnouts, sensors and boosters over CAN (MCP2515)
+          category=Device Control
+          url=https://github.com/Maggge/MobaBus
+          architectures=avr
+          includes=MobaBus.h
+          depends=mcp_can,Adafruit PWM Servo Driver Library,Servo
+          EOF
+
+      - name: Compile
+        run: |
+          arduino-cli compile \
+            --fqbn ${{ matrix.board }} \
+            --library "$GITHUB_WORKSPACE" \
+            --warnings default \
+            ${{ matrix.example }}
