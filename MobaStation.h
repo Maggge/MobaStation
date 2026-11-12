@@ -53,9 +53,43 @@ DueFlashStorage FlashStore;
 
 #include <XpressNetMaster.h>
 
-//Config Storage inside EEPROM
-#define CONFIG_STORAGE 0 //EEPROM Address where the config is stored
+//Optional user configuration: copy MobaStationConfig.example.h to MobaStationConfig.h in this
+//(the library) folder to change pins and default settings without editing the library
+#if defined(__has_include)
+#  if __has_include("MobaStationConfig.h")
+#    include "MobaStationConfig.h"
+#  endif
+#endif
 
+
+//Config Storage inside EEPROM
+#ifndef CONFIG_STORAGE
+#define CONFIG_STORAGE 0 //EEPROM Address where the config is stored
+#endif
+
+
+#ifndef POWER_BUTTON
+#define POWER_BUTTON 24
+#endif
+#ifndef POWER_LED
+#define POWER_LED 25
+#endif
+#ifndef VOLTAGE_SENSE_PIN
+#define VOLTAGE_SENSE_PIN A15
+#endif
+//multiplier to get millivolts from the analog reading of the voltage divider
+#ifndef VOLTAGE_MULTIPLIER
+#define VOLTAGE_MULTIPLIER 25.58f
+#endif
+
+//default turnout routing, can be changed with MobaStation::setTurnoutMode()
+#ifndef DEFAULT_TURNOUT_MODE
+#define DEFAULT_TURNOUT_MODE Combined
+#endif
+//in Combined mode all turnouts up to this address are handled by DCC, the ones above by MobaBus
+#ifndef DCC_TURNOUT_ADDRESS_RANGE
+#define DCC_TURNOUT_ADDRESS_RANGE 2047
+#endif
 
 //Firmware-Version der Z21:
 #define z21FWVersionMSB 0x01
@@ -77,18 +111,27 @@ DueFlashStorage FlashStore;
 
 
 //--------------------------------------------------------------
+#ifndef z21clientMAX
 #define z21clientMAX 20        //Speichergr��e f�r IP-Adressen
+#endif
 #define z21ActTimeIP 20    //Aktivhaltung einer IP f�r (sec./2)
 #define z21IPinterval 2000   //interval at milliseconds
 #define z21InfoInterval 2000 //Interval for broadcast System Info
 
+#ifndef ETH_INTERFACES
 #define ETH_INTERFACES 2
+#endif
 
+#ifndef MAX_XPRESSNET_CLIENTS
 #define MAX_XPRESSNET_CLIENTS 5
+#endif
 
-#define POWER_BUTTON 24
-#define POWER_LED 25
-#define VOLTAGE_SENSE_PIN A15
+//after this time a CV read/write on the programming track is aborted if the
+//DCC library did not report a result, so the programming track stays usable
+#ifndef CV_ACK_TIMEOUT
+#define CV_ACK_TIMEOUT 10000
+#endif
+
 
 enum TurnoutMode{
     MobaBus_Only,
@@ -166,9 +209,11 @@ private:
     //Ackmanager
     static IPAddress ackClient;
     static bool waitForAck;
+    static uint32_t ackStartTime;
     static int16_t ackCv;
     static uint8_t writeVal;
     static bool cvWrite;
+    static void sendCvResult(int16_t result);
     static void cvCallback(int16_t result);
 
 public:

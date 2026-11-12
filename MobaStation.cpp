@@ -38,10 +38,10 @@ XpressNetClient MobaStation::xpressNetClients[MAX_XPRESSNET_CLIENTS];
 
 uint16_t MobaStation::_port;
 
-TurnoutMode MobaStation::turnoutMode = Combined;
-uint16_t MobaStation::dccAddrRange = 2047; 
+TurnoutMode MobaStation::turnoutMode = DEFAULT_TURNOUT_MODE;
+uint16_t MobaStation::dccAddrRange = DCC_TURNOUT_ADDRESS_RANGE; 
 
-float MobaStation::voltageMulti = 25.58f;
+float MobaStation::voltageMulti = VOLTAGE_MULTIPLIER;
 
 
 
@@ -64,6 +64,7 @@ UdpPacket MobaStation::pkgBuffer;
 //Ackmanager
 IPAddress MobaStation::ackClient;
 bool MobaStation::waitForAck;
+uint32_t MobaStation::ackStartTime;
 uint8_t MobaStation::writeVal;
 bool MobaStation::cvWrite;
 int16_t MobaStation::ackCv;
@@ -135,6 +136,17 @@ void MobaStation::loop(){
   }
  
   DCC::loop();
+
+  //the DCC library should always report a result, but if it does not,
+  //answer the client and release the programming track instead of blocking forever
+  if(waitForAck && (currentTime - ackStartTime) > CV_ACK_TIMEOUT){
+    #ifdef DEBUG
+    Serial.println("CV operation timeout");
+    #endif
+    sendCvResult(-1);
+    cvWrite = false;
+    waitForAck = false;
+  }
 
   processMobaBus();
 
@@ -533,6 +545,7 @@ void MobaStation::processLanXPacket(UdpPacket *packet){
         Serial.println(cv);
         #endif
         waitForAck = true;
+        ackStartTime = millis();
         ackClient = packet->ip;
         ackCv = cv;
         cv++; //1 hochzählen da bei z21 0 = 1;
@@ -557,6 +570,7 @@ void MobaStation::processLanXPacket(UdpPacket *packet){
         Serial.println(cv); 
         #endif
         waitForAck = true;
+        ackStartTime = millis();
         ackClient = packet->ip;
         ackCv = cv;
         cv++; //1 hochzählen da bei z21 0 = 1;
@@ -742,15 +756,7 @@ void MobaStation::processLanXPacket(UdpPacket *packet){
   }
 }
 
-void MobaStation::cvCallback(int16_t result){
-  if(cvWrite && result == 1){
-    result = writeVal;
-  }
-  #ifdef DEBUG
-  Serial.print("Callback: ");
-  Serial.println(result);
-  #endif
-  
+void MobaStation::sendCvResult(int16_t result){
   uint8_t len;
   uint8_t data[5];
   
@@ -769,6 +775,21 @@ void MobaStation::cvCallback(int16_t result){
     data[4] = result;
   }
   sendLanPacket(ackClient, len, LAN_X_HEADER, data, true);
+}
+
+void MobaStation::cvCallback(int16_t result){
+  //already answered with a timeout, don't answer twice
+  if(!waitForAck) return;
+
+  if(cvWrite && result == 1){
+    result = writeVal;
+  }
+  #ifdef DEBUG
+  Serial.print("Callback: ");
+  Serial.println(result);
+  #endif
+
+  sendCvResult(result);
   cvWrite = false;
   waitForAck = false;
 }

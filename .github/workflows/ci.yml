@@ -18,9 +18,21 @@ jobs:
       fail-fast: false
       matrix:
         board: [arduino:avr:mega]
-        example:
-          - examples/MobaStationEth
-          - examples/MobaStationWiFi
+        include:
+          - example: examples/MobaStationEth
+            build_type: release
+            extra_flags: ""
+          - example: examples/MobaStationEth
+            build_type: debug
+            extra_flags: "-DDEBUG"
+          - example: examples/MobaStationWiFi
+            build_type: release
+            extra_flags: ""
+          - example: examples/MobaStationWiFi
+            build_type: debug
+            extra_flags: "-DDEBUG"
+
+    name: ${{ matrix.example }} (${{ matrix.build_type }})
 
     steps:
       - name: Checkout
@@ -77,4 +89,5 @@ jobs:
             --fqbn ${{ matrix.board }} \
             --library "$GITHUB_WORKSPACE" \
             --warnings default \
+            --build-property "build.extra_flags=${{ matrix.extra_flags }}" \
             ${{ matrix.example }}
