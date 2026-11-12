@@ -1,4 +1,6 @@
 # MobaStation
+[![CI](https://github.com/Maggge/MobaStation/actions/workflows/ci.yml/badge.svg)](https://github.com/Maggge/MobaStation/actions/workflows/ci.yml)
+
 <p align="center">
   <img src="/Housing/Front.jpg" width="500">
   <img src="/Housing/Back.jpg" width="500">
@@ -12,7 +14,32 @@ MobaStation works with the Z21-LAN-Protocol. So you can connect it as Z21 to con
 For DCC we use the <a href="https://github.com/Maggge/DCC">Maggge/DCC</a>-Library wich is extracted from <a href="https://github.com/DCC-EX/CommandStation-EX">DCC-EX</a>-Library and slightly modified.
 
 For accessories like turnouts, sensors and others we use the <a href="https://github.com/Maggge/MobaBus">Maggge/MobaBus</a>-Library.</br>
-Coming soon: XpressNet to connect Roco multiMAUS controller.
+XpressNet is supported as well, connect a MAX485 RS485 module to Serial1 (TX1/RX1) and drive the direction pin with pin 22 to use Roco multiMAUS or Lenz throttles.
+
+<h2>Build it yourself</h2>
+
+The repository is an Arduino library, the sketches in <i>examples</i> are the supported build targets.
+MobaStation needs the DCC and MobaBus libraries, both are plain git repositories without a
+library.properties file, so they have to be cloned into the libraries folder of your Arduino sketchbook:
+
+```
+git clone https://github.com/Maggge/DCC       ~/Arduino/libraries/DCC
+git clone https://github.com/Maggge/MobaBus   ~/Arduino/libraries/MobaBus
+```
+
+Install the remaining libraries (Ethernet, Servo, mcp_can and the Adafruit PWM Servo Driver) with the
+library manager of the IDE, or with arduino-cli:
+
+```
+arduino-cli lib install Ethernet Servo mcp_can "Adafruit PWM Servo Driver Library"
+arduino-cli compile --fqbn arduino:avr:mega --library . examples/MobaStationEth
+```
+
+Copy MobaStationConfig.example.h to MobaStationConfig.h in the folder of the MobaStation library if you
+want to change the pins or the default settings without editing the library.
+
+The <a href=https://github.com/Maggge/MobaStation/releases>releases</a> contain prebuild firmware plus the Config Tool,
+so building it yourself is only needed if you want to modify something.
 
 <h2>Installation</h2>
 
@@ -32,7 +59,7 @@ Coming soon: XpressNet to connect Roco multiMAUS controller.
       <p align="center">
         <img src="/schematics/Mega-Can.jpg" width="500"> 
       </p>
-      4)Optional: MAX485 RS485-Modul connected to Serial1 for XPressNet (at the moment not activated)
+      4)Optional: MAX485 RS485-Modul connected to Serial1 for XPressNet (direction control on pin 22)
       <p align="center">
         <img src="/schematics/Mega-RS485.jpg" width="500"> 
       </p>
