@@ -32,15 +32,21 @@
 class Eth_Adapter : public Eth_Interface{
 private:
     EthernetUDP Udp;
-    char packetBuffer[Z21_MAX_UDP_SIZE];  // buffer to hold incoming packet
 
     uint8_t cs;
     byte *mac;
 
     IPAddress ip;
+    IPAddress subnetMask;
+    IPAddress gateway;
 
     uint16_t port;
 
+    bool linkOK = false;
+    uint32_t lastLinkCheck = 0;
+
+    //bring the W5x00 and the UDP socket back up after the link was lost
+    bool initStack();
 
 public:
     /**

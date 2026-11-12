@@ -292,14 +292,17 @@ void XpressNetMasterClass::XNetAnalyseReceived(void) {		//work on received data
 						Bit 6: = 1 - The command station is performing a power up.
 						Bit 7: = 1 - There was a RAM check error in the command station
 						*/
+						#if !defined(RAW_DATA_MODE)
+						//XpressNet only knows the Nothalt bit, there is no dedicated bit for
+						//track voltage off or short circuit, both are reported as Nothalt
 						byte status = 0x01;	//csTrackVoltageOff = B1;
 						switch (Railpower) {
 							case csNormal:			status = 0; break;
 							case csEmergencyStop:	status = 0x01; break;
+							case csTrackVoltageOff:	status = 0x01; break;
 							case csServiceMode:		status = 0x08; break;
-							case csShortCircuit:	status = 0x02; break;
+							case csShortCircuit:	status = 0x01; break;
 						}
-						#if !defined(RAW_DATA_MODE)
 						uint8_t sendStatus[] = { DirectedOps, 0x62, 0x22, status, 0x00 };
 						getXOR(sendStatus, 5);
 						XNetsend(sendStatus, 5);
@@ -321,7 +324,9 @@ void XpressNetMasterClass::XNetAnalyseReceived(void) {		//work on received data
 					#if !defined(RAW_DATA_MODE)
 					if (XNetMsg[XNetdata1] == 0x10 && XNetMsg[XNetdata2] == 0x31) {	//Request for Service Mode results 
 						if (XNetCVAdr != 0) {
-							uint8_t sendStatus[] = { DirectedOps, 0x63, 0x14, XNetCVAdr, XNetCVvalue, 0x00};	//Service Mode response for Direct CV mode   
+							//Service Mode response for Direct CV mode.
+							//Attention: this XNet frame carries the CV address in one byte, so only CV 0-255 is supported here
+							uint8_t sendStatus[] = { DirectedOps, 0x63, 0x14, (uint8_t)(XNetCVAdr & 0xFF), XNetCVvalue, 0x00};
 							getXOR(sendStatus, 6);
 							XNetsend(sendStatus, 6);
 							XNetCVAdr = 0;	//reset CV read Adr

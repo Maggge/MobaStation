@@ -152,9 +152,15 @@ bool ESP_AT_Wifi::receivePacket(UdpPacket *pkg){
     WiFi.loop();
     int pkgSize = Udp.parsePacket();
     if(pkgSize > 0){
+        if(pkgSize > Z21_MAX_UDP_SIZE){
+            #ifdef DEBUG
+            Serial.println(F("Received packet too long, truncated"));
+            #endif
+            pkgSize = Z21_MAX_UDP_SIZE;
+        }
         pkg->ip = Udp.remoteIP();
         pkg->dataLength = pkgSize;
-        Udp.read(pkg->data, Z21_MAX_UDP_SIZE);
+        Udp.read(pkg->data, pkgSize);
         return true;
     }
     return false;

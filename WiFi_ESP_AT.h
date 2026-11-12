@@ -35,30 +35,35 @@ typedef __FlashStringHelper FSH;
 
 #define SEND_TIMEOUT 200
 
+//usable client links when CIPMUX=1. link 4 is reserved by the AT firmware for the TCP server
+#define WIFI_LINKS 4
+
 class WiFiClass{
 private:
-    Stream *wifi;
+    Stream *wifi = NULL;
 
-    WL_STATE state;
+    WL_STATE state = WL_NO_MODULE;
 
-    WiFiMode activeMode;
+    WiFiMode activeMode = Station_Mode;
 
 
     WIFI_PACKET recBuffer;
-    RECEIVE_STATE receiveState;
-    bool pendingReceive;
+    RECEIVE_STATE receiveState = STANDBY;
+    bool pendingReceive = false;
     uint8_t readDataIdx = 0;
+    //bytes of the current payload that do not fit into recBuffer and must be discarded
+    uint16_t dropBytes = 0;
 
     WIFI_PACKET sendBuffer[SEND_BUF_SIZE];
-    uint8_t sendIdx;
-    uint8_t tail;
+    uint8_t sendIdx = 0;
+    uint8_t tail = 0;
     bool waitForSend = false;
-    bool pendingCipsend;
-    uint32_t sendTime;
+    bool pendingCipsend = false;
+    uint32_t sendTime = 0;
 
     bool oldCmd = false;
 
-    bool linkIdOccupied[4];
+    bool linkIdOccupied[WIFI_LINKS] = {false};
 
     bool checkForAnswer( const unsigned int timeout, const FSH * waitfor);
     bool checkForOk(const unsigned int timeout);
@@ -79,6 +84,7 @@ public:
     bool startAP(const char * ssid, const char * pwd);
 
     WiFiMode getMode();
+    WL_STATE getStatus();
     //Return the linkID, 255 if not successfull
     uint8_t connect(CONN_TYPE type, const char *host, uint16_t port);
     bool disconnect(uint8_t linkID);

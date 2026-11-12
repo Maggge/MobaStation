@@ -860,19 +860,34 @@ void MobaStation::clearIPSlot(IPAddress ip) {
   }
 }
 
+uint8_t MobaStation::getIPKey(IPAddress ip){
+    //key for the broadcast flag store, 1..128 so it never collides with the
+    //value of an erased EEPROM byte (0xFF)
+    return (uint8_t)(((ip.operator[](0) ^ ip.operator[](1) ^ ip.operator[](2) ^ ip.operator[](3)) & 0x7F) + 1);
+}
+
 uint8_t MobaStation::getEEPROMBCFlag(IPAddress ip){
-    
-    uint16_t addr = ip.operator[](3) + CLIENTBCFLAGSTORE;
-    if(FSTORAGE.length() >= addr){
-        return FSTORAGE.read(addr);
-    }
-    return 0;
+    //2 bytes per client: key of the IP + the broadcast flags
+    uint16_t addr = CLIENTBCFLAGSTORE + ((uint16_t)ip.operator[](3) * 2);
+    if(addr + 1 >= CLIENTBCFLAGSTORE + CLIENTSTORELENGTH) return 0;	//outside of the storage area
+    if(addr + 1 >= FSTORAGE.length()) return 0;
+
+    //another client used this address before
+    if(FSTORAGE.read(addr) != getIPKey(ip)) return 0;
+
+    return FSTORAGE.read(addr + 1);
 }
 
 void MobaStation::saveEEPROMBCFlag(IPAddress ip, uint8_t BCFlag){
-    uint16_t addr = ip.operator[](3) + CLIENTBCFLAGSTORE;
-    if(FSTORAGE.length() >= addr){
-        FSTORAGE.FSTORAGEMODE(addr, BCFlag);
+    uint16_t addr = CLIENTBCFLAGSTORE + ((uint16_t)ip.operator[](3) * 2);
+    if(addr + 1 >= CLIENTBCFLAGSTORE + CLIENTSTORELENGTH) return;	//outside of the storage area
+    if(addr + 1 >= FSTORAGE.length()) return;
+
+    uint8_t key = getIPKey(ip);
+    //only write if something changed, EEPROM cells have a limited lifetime
+    if(FSTORAGE.read(addr) != key || FSTORAGE.read(addr + 1) != BCFlag){
+        FSTORAGE.FSTORAGEMODE(addr, key);
+        FSTORAGE.FSTORAGEMODE(addr + 1, BCFlag);
     }
 }
 

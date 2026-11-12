@@ -73,7 +73,7 @@ DueFlashStorage FlashStore;
 #define CONF2STORE 60	//(15x Byte)	- Voltage: Prog, Rail, etc.
 
 #define CLIENTBCFLAGSTORE 3000			//Start where Client-Hash is stored
-#define CLIENTSTORELENGTH 255		//Length of Client Broadcast-Flag store
+#define CLIENTSTORELENGTH 512		//Length of Client Broadcast-Flag store (2 byte per client)
 
 
 //--------------------------------------------------------------
@@ -154,6 +154,7 @@ private:
 
     static void broadcastSystemInfo(IPAddress *force = NULL);
 
+    static uint8_t getIPKey(IPAddress ip);
     static uint8_t getEEPROMBCFlag(IPAddress ip);
     static void saveEEPROMBCFlag(IPAddress ip, uint8_t BCFlag);
 

@@ -23,6 +23,8 @@
 
 //#define DEBUG
 
+#define LINK_CHECK_INTERVAL 2000  //check the link state every 2 seconds
+
 Eth_Adapter::Eth_Adapter(uint8_t cs, byte * mac){
     this->cs = cs;
     this->mac = mac;
@@ -31,10 +33,18 @@ Eth_Adapter::Eth_Adapter(uint8_t cs, byte * mac){
 bool Eth_Adapter::begin(uint16_t port,  IPAddress ip, IPAddress subnetMask){
     this->port = port;
     this->ip = ip;
+    this->subnetMask = subnetMask;
+    //no gateway/DNS needed for the Z21 LAN protocol, use the first address of the subnet
+    this->gateway = IPAddress(ip[0], ip[1], ip[2], 1);
+
     Ethernet.init(cs);
 
-    Ethernet.begin(mac, this->ip);
-    Ethernet.setSubnetMask(subnetMask);
+    return initStack();
+}
+
+bool Eth_Adapter::initStack(){
+    //Attention: the order of the arguments is mac, ip, dns, gateway, subnetMask
+    Ethernet.begin(mac, ip, gateway, gateway, subnetMask);
 
     if(Ethernet.hardwareStatus() == EthernetNoHardware){
         #ifdef DEBUG
@@ -42,13 +52,15 @@ bool Eth_Adapter::begin(uint16_t port,  IPAddress ip, IPAddress subnetMask){
         #endif
         return false;
     }
-    
-    if(Ethernet.linkStatus() == LinkOFF){
+
+    linkOK = Ethernet.linkStatus() == LinkON;
+    if(!linkOK){
         #ifdef DEBUG
         Serial.println("Ethernet cable is not connected.");
         #endif
     }
 
+    Udp.stop();
     Udp.begin(port);
     #ifdef DEBUG
     Serial.print("Ethernet connected IP: ");
@@ -74,11 +86,38 @@ bool Eth_Adapter::send(IPAddress client , uint8_t *data){
 }
 
 bool Eth_Adapter::receivePacket(UdpPacket *pkg){
+    //recover the connection if the cable was unplugged or the router was restarted
+    uint32_t now = millis();
+    if(now - lastLinkCheck > LINK_CHECK_INTERVAL){
+        lastLinkCheck = now;
+        bool link = Ethernet.linkStatus() == LinkON;
+        if(!link){
+            if(linkOK){
+                linkOK = false;
+                #ifdef DEBUG
+                Serial.println("Ethernet link lost.");
+                #endif
+            }
+        }
+        else if(!linkOK){
+            #ifdef DEBUG
+            Serial.println("Ethernet link back up, reinitialize.");
+            #endif
+            initStack();
+        }
+    }
+
     int pkgSize = Udp.parsePacket();
     if(pkgSize) {
+        if(pkgSize > Z21_MAX_UDP_SIZE){
+            #ifdef DEBUG
+            Serial.println("Received packet too long, truncated");
+            #endif
+            pkgSize = Z21_MAX_UDP_SIZE;
+        }
         pkg->ip = Udp.remoteIP();
         pkg->dataLength = pkgSize;
-        Udp.read(pkg->data, Z21_MAX_UDP_SIZE);
+        Udp.read(pkg->data, pkgSize);
         return true;
     }
     return false;

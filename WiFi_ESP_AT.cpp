@@ -177,18 +177,24 @@ WiFiMode WiFiClass::getMode(){
     return activeMode;
 }
 
+WL_STATE WiFiClass::getStatus(){
+    return state;
+}
+
 uint8_t WiFiClass::connect(CONN_TYPE type, const char *host, uint16_t port){
-    if(state != WL_CONNECTED || state != WL_AP_LISTENING || state != WL_AP_CONNECTED)
+    //only possible if the module is connected as station or runs an accesspoint
+    if(state != WL_CONNECTED && state != WL_AP_LISTENING && state != WL_AP_CONNECTED) return 255;
+
     //Set the mode for multiple connections
     wifi->print("AT+CIPMUX=1\r\n");
-    if(!checkForOk(2000)) return false;
+    if(!checkForOk(2000)) return 255;
 
     wifi->print("AT+CIPDINFO=1\r\n");
-    if(!checkForOk(2000)) return false;
+    if(!checkForOk(2000)) return 255;
 
     uint8_t linkID = getFreeLinkID();
     if(linkID == 255) return linkID;
-    char *t;
+    const char *t;
     
     switch (type) {
         case CONN_TYPE::UDP:
@@ -226,12 +232,14 @@ uint8_t WiFiClass::connect(CONN_TYPE type, const char *host, uint16_t port){
 }
 
 uint8_t WiFiClass::startTcpServer(uint16_t port){
+    if(state != WL_CONNECTED && state != WL_AP_LISTENING && state != WL_AP_CONNECTED) return 255;
+
     wifi->print("AT+CIPSERVER=1,");
     wifi->print(port);
     wifi->print("\r\n");
-    if(!checkForOk(2000)) return false;
+    if(!checkForOk(2000)) return 255;
 
-    return true;
+    return 1;
 }
 
 bool WiFiClass::stopTcpServer(){
@@ -242,6 +250,7 @@ bool WiFiClass::stopTcpServer(){
 }
 
 void WiFiClass::loop(){
+    if(wifi == NULL) return;
     if(!pendingCipsend && waitForSend){
         sendNext();
     }
@@ -250,14 +259,22 @@ void WiFiClass::loop(){
         Serial.println("Send timeout! Send next!");
         #endif
         pendingCipsend = false;
+        //drop this packet and continue with the next one in the queue
         sendIdx++;
+        if(sendIdx >= SEND_BUF_SIZE){
+            sendIdx = 0;
+        }
+        if(sendIdx == tail){
+            waitForSend = false;
+        }
         sendNext();
     }
 
     while (wifi->available()){
         switch (receiveState) {
             case STANDBY:{
-                uint8_t ch = wifi->read();
+                int ch = wifi->read();
+                if(ch < 0) break;
                 if (ch == '+') {
                     receiveState = IPD;
                     #ifdef DEBUG
@@ -331,6 +348,18 @@ void WiFiClass::loop(){
                 break; 
             case LENGTH:
                 recBuffer.len = wifi->parseInt();
+                if(recBuffer.len > PKG_SIZE){
+                    //payload bigger than our buffer - store what fits and discard the rest
+                    #ifdef DEBUG
+                    Serial.println("Packet too long, truncated");
+                    #endif
+                    dropBytes = recBuffer.len - PKG_SIZE;
+                    recBuffer.len = PKG_SIZE;
+                }
+                else{
+                    dropBytes = 0;
+                }
+                readDataIdx = 0;
                 #ifdef DEBUG
                 Serial.print("Length: ");
                 Serial.println(recBuffer.len);
@@ -372,15 +401,22 @@ void WiFiClass::loop(){
                     #endif
                 }       
                 break;
-            case DATA:
-                recBuffer.data[readDataIdx] = wifi->read();
-                #ifdef DEBUG
-                Serial.print("0x");
-                Serial.print(recBuffer.data[readDataIdx], HEX);
-                Serial.print("; ");
-                #endif
-                readDataIdx++;
-                if(readDataIdx >= recBuffer.len){
+            case DATA:{
+                int byteRead = wifi->read();
+                if(byteRead < 0) break;
+                if(readDataIdx < recBuffer.len){
+                    recBuffer.data[readDataIdx] = (uint8_t)byteRead;
+                    #ifdef DEBUG
+                    Serial.print("0x");
+                    Serial.print(recBuffer.data[readDataIdx], HEX);
+                    Serial.print("; ");
+                    #endif
+                    readDataIdx++;
+                }
+                else if(dropBytes){
+                    dropBytes--;    //payload was truncated, throw the rest away
+                }
+                if(readDataIdx >= recBuffer.len && !dropBytes){
                     readDataIdx = 0;
                     pendingReceive = true;
                     receiveState = BUFFER;
@@ -389,6 +425,7 @@ void WiFiClass::loop(){
                     #endif
                 }
                 break;
+            }
             case BUFFER:
                 if(!pendingReceive){
                     receiveState = STANDBY;
@@ -406,6 +443,7 @@ void WiFiClass::loop(){
 }
 
 bool WiFiClass::disconnect(uint8_t linkID){
+    if(linkID >= WIFI_LINKS) return false;
     wifi->print("AT+CIPCLOSE=");
     wifi->println(linkID);
     if(!checkForOk(2000)) return false;
@@ -429,15 +467,17 @@ bool WiFiClass::getPacket(uint8_t linkId, WIFI_PACKET *pkg){
     Serial.print("get Packet linkID: ");
     Serial.println(linkId);
     #endif
+    uint16_t len = recBuffer.len;
+    if(len > PKG_SIZE) len = PKG_SIZE;
     pkg->ip = recBuffer.ip;
     pkg->linkId = recBuffer.linkId;
-    pkg->len = recBuffer.len;
-    pkg->ip = recBuffer.ip;
+    pkg->len = len;
     pkg->port = recBuffer.port;
-    for(uint16_t i = 0; i < pkg->len; i++){
+    for(uint16_t i = 0; i < len; i++){
         pkg->data[i] = recBuffer.data[i];
     }
     pendingReceive = false;
+    receiveState = STANDBY;
     #ifdef DEBUG
     Serial.print("PAcket received from ");
     Serial.println(pkg->ip);
@@ -450,18 +490,24 @@ bool WiFiClass::sendPkg(WIFI_PACKET *pkg){
     Serial.print("Send Packet to ");
     Serial.println(pkg->ip);
     #endif
-    if(waitForSend && tail == sendIdx) return false;
+    uint8_t next = tail + 1;
+    if(next >= SEND_BUF_SIZE){
+        next = 0;
+    }
+    //ring buffer full, nothing space left
+    if(waitForSend && next == sendIdx) return false;
+
+    uint16_t len = pkg->len;
+    if(len > PKG_SIZE) len = PKG_SIZE;
+
     sendBuffer[tail].linkId = pkg->linkId;
     sendBuffer[tail].ip = pkg->ip;
     sendBuffer[tail].port = pkg->port;
-    sendBuffer[tail].len = pkg->len;
-    for(int i = 0; i < pkg->len; i++){
+    sendBuffer[tail].len = len;
+    for(uint16_t i = 0; i < len; i++){
         sendBuffer[tail].data[i] = pkg->data[i];
     }
-    tail++;
-    if(tail >= SEND_BUF_SIZE){
-        tail = 0;
-    }
+    tail = next;
     waitForSend = true;
     return true;
 }
@@ -470,6 +516,7 @@ bool WiFiClass::sendPkg(WIFI_PACKET *pkg){
 
 void WiFiClass::sendNext(){
     if(!waitForSend || pendingCipsend) return;
+    if(wifi == NULL || sendIdx >= SEND_BUF_SIZE) return;
     #ifdef DEBUG
     Serial.println("----- SEND -----");
     Serial.print("Client IP: ");
@@ -496,7 +543,7 @@ void WiFiClass::sendNext(){
 }
 
 void WiFiClass::txData(){
-    if(!pendingCipsend) return;
+    if(!pendingCipsend || sendIdx >= SEND_BUF_SIZE) return;
     for(uint16_t i = 0; i  < sendBuffer[sendIdx].len; i++){
         wifi->write(sendBuffer[sendIdx].data[i]);
     }
@@ -511,7 +558,7 @@ void WiFiClass::txData(){
 }
 
 uint8_t WiFiClass::getFreeLinkID(){
-    for(int i = 0; i < 5; i++){
+    for(int i = 0; i < WIFI_LINKS; i++){
         if(!linkIdOccupied[i]){
             return i;
         }

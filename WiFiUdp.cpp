@@ -25,9 +25,10 @@ uint8_t WiFiUDP::begin(uint16_t port){
     return beginMulticast(IPAddress(0,0,0,0), port);
 }
 
-uint8_t WiFiUDP::beginMulticast(IPAddress ip, uint16_t port){  
+uint8_t WiFiUDP::beginMulticast(IPAddress ip, uint16_t port){
+    if(link_ID != 255) stop();   //free the link of a previous begin()
     char host[16];
-    sprintf(host, "%d.%d.%d.%d\0", ip[0],ip[1],ip[2],ip[3]);
+    sprintf(host, "%d.%d.%d.%d", ip[0],ip[1],ip[2],ip[3]);
     link_ID = WiFi.connect(CONN_TYPE::UDP, host, port);
     #ifdef DEBUG
     Serial.print("Link id: ");
@@ -40,6 +41,9 @@ uint8_t WiFiUDP::beginMulticast(IPAddress ip, uint16_t port){
 void WiFiUDP::stop(){
     if(link_ID == 255) return;
     WiFi.disconnect(link_ID);
+    link_ID = 255;
+    recPending = false;
+    recIdx = 0;
 }
 
 int WiFiUDP::parsePacket(){
@@ -55,39 +59,37 @@ int WiFiUDP::parsePacket(){
 
 int WiFiUDP::available(){
     if(!recPending) return 0;
-    return pkgBuffer.len - recIdx;
+    int remaining = (int)pkgBuffer.len - (int)recIdx;
+    return remaining > 0 ? remaining : 0;
 }
 
 int WiFiUDP::read(){
-    if(!recPending) return 0;
-    int d = pkgBuffer.data[recIdx];
-    recIdx++;
-    if(recIdx == pkgBuffer.len){
-        recPending = false;
-    }
-    return d;
+    if(!recPending || recIdx >= pkgBuffer.len) return -1;
+    return pkgBuffer.data[recIdx++];
 }
 
 int WiFiUDP::read(unsigned char* buffer, size_t len){
     if(!recPending) return 0;
-    size_t l = (len < pkgBuffer.len) ? len : pkgBuffer.len;
+    size_t avail = (size_t)available();
+    size_t l = (len < avail) ? len : avail;
     for(size_t i = 0; i < l; i++){
-        buffer[i] = read();
+        buffer[i] = (uint8_t)read();
     }
     return l;
 }
 
 int WiFiUDP::read(char* buffer, size_t len){
     if(!recPending) return 0;
-    size_t l = (len < pkgBuffer.len) ? len : pkgBuffer.len;
+    size_t avail = (size_t)available();
+    size_t l = (len < avail) ? len : avail;
     for(size_t i = 0; i < l; i++){
-        buffer[i] = read();
+        buffer[i] = (char)read();
     }
     return l;
 }
 
 int WiFiUDP::peek(){
-    if(!recPending) return 0;
+    if(!recPending || recIdx >= pkgBuffer.len) return -1;
     return pkgBuffer.data[recIdx];
 }
 
@@ -132,15 +134,19 @@ int WiFiUDP::endPacket(){
 
 size_t WiFiUDP::write(uint8_t d){
     if(!pkgBegin) return 0;
+    if(sendBuffer.len >= PKG_SIZE) return 0; //packet full
     sendBuffer.data[sendBuffer.len] = d;
     sendBuffer.len++;
+    return 1;
 }
 
 size_t WiFiUDP::write(const uint8_t *buffer, size_t size){
     if(!pkgBegin) return 0;
-    size_t l = size > PKG_SIZE ? PKG_SIZE : size;
+    size_t space = PKG_SIZE - sendBuffer.len;
+    size_t l = size > space ? space : size;
     for(size_t i = 0; i < l; i++){
-        write(buffer[i]);
+        sendBuffer.data[sendBuffer.len + i] = buffer[i];
     }
+    sendBuffer.len += l;
     return l;
 }
