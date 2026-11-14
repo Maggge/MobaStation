@@ -70,6 +70,12 @@ enum RECONNECT_STATE{
     RECONNECT_CIPMUX,       //AT+CIPMUX=1
     RECONNECT_DINFO,        //AT+CIPDINFO=1
     RECONNECT_WAIT,         //wifi is down, waiting for the next attempt
+    //hybrid mode: accesspoint next to the station while the station is not reachable
+    RECONNECT_AP_MODE,      //AT+CWMODE_CUR=3
+    RECONNECT_AP_CONFIG,    //AT+CWSAP_CUR
+    RECONNECT_AP_IP,        //AT+CIPAP_CUR
+    RECONNECT_AP_DHCP,      //AT+CWDHCPS_CUR
+    RECONNECT_STA_ONLY,     //station is back, AT+CWMODE_CUR=1 switches the accesspoint off
 };
 
 enum CONN_TYPE{

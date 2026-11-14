@@ -27,7 +27,12 @@
 
 #define Z21_STANDARD_PORT 21105
 
-#define Z21_MAX_UDP_SIZE 15
+//one UDP datagram may carry several Z21 records, this is the size of the whole datagram
+//(the ESP AT receive buffer PKG_SIZE must not be smaller)
+#define Z21_MAX_UDP_SIZE 64
+//a single record is copied into a zero padded buffer of this size before it is parsed,
+//every record that is evaluated is shorter
+#define Z21_MAX_RECORD 16
 
 //------------   Z21 Header   ------------
 #define LAN_GET_SERIAL_NUMBER        0x10
@@ -136,21 +141,19 @@
 
 struct UdpPacket{
     IPAddress ip;
+    uint16_t port;      //source port, the answer goes back to it
+    uint8_t iface;      //index of the interface the packet was received on
     uint16_t dataLength;
     uint8_t data[Z21_MAX_UDP_SIZE];
 };
 
 struct IPClient{
     IPAddress ip;
+    uint16_t port;      //source port of the client
+    uint8_t iface;      //the client is only reachable over this interface
     uint8_t BCFlag;
     uint8_t time;
     uint16_t locoAbo[CLIENT_MAX_LOCO_ABO];
-};
-
-enum TURNOUT_MODE{
-    TURNOUT_MobaBus,
-    TURNOUT_DCC,
-    TURNOUT_HYBRID,
 };
 
 struct XpressNetClient{

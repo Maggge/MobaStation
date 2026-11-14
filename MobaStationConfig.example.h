@@ -23,6 +23,7 @@
 
 Copy this file into the folder of the MobaStation library (next to MobaStation.h) and
 rename it to "MobaStationConfig.h", MobaStation.h picks it up automatically.
+The file is included by several library files, so it may only contain #defines.
 
 Every setting is optional, the value in the comment is the default.
 The motor shield and whether the prog track is driven are defined in the
@@ -92,3 +93,28 @@ attached at runtime with MobaStation::attachXpressNet().
 //
 // how long a single AT+CWJAP of a reconnect may take
 //#define WIFI_RECONNECT_JOIN_TIMEOUT 12000
+//
+// hybrid mode: after this many failed reconnect rounds (3 joins each) the own
+// accesspoint is started next to the station, the station is still searched
+//#define WIFI_FALLBACK_ROUNDS 3
+//
+// time between two station attempts while the fallback accesspoint runs,
+// every attempt makes the accesspoint unreachable for a moment
+//#define WIFI_FALLBACK_RECONNECT_INTERVAL 60000
+
+/////////////////////////////////////////////////////////////////////////////////
+//
+// WIFI ACCESSPOINT (SoftAP mode and hybrid fallback)
+//
+// the accesspoint uses the ip address of MobaStation, change the password,
+// the default one is public. The password needs at least 8 characters.
+//#define WIFI_AP_SSID "MobaStation"
+//#define WIFI_AP_PWD "MobaStation"
+
+/////////////////////////////////////////////////////////////////////////////////
+//
+// DCC TURNOUT STATE
+//
+// the last position of the first turnouts is kept to answer turnout info requests,
+// 2 bit per turnout (512 turnouts = 128 bytes RAM)
+//#define TURNOUT_STATE_COUNT 512

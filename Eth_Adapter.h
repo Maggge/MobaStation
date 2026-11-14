@@ -59,7 +59,7 @@ public:
     Eth_Adapter(uint8_t cs, byte * mac);
 
     bool begin(uint16_t port, IPAddress ip, IPAddress subnetMask);
-    bool send(IPAddress client , uint8_t *data);
+    bool send(IPAddress client, uint16_t dstPort, uint8_t *data);
     bool receivePacket(UdpPacket *pkg);    
 
 };

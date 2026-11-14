@@ -136,6 +136,12 @@ DueFlashStorage FlashStore;
 #define CV_ACK_TIMEOUT 10000
 #endif
 
+//the last position of the DCC turnouts is kept to answer turnout info requests,
+//2 bit per turnout: 512 turnouts = 128 bytes RAM. Turnouts above report "unknown"
+#ifndef TURNOUT_STATE_COUNT
+#define TURNOUT_STATE_COUNT 512
+#endif
+
 
 enum TurnoutMode{
     MobaBus_Only,
@@ -160,13 +166,12 @@ private:
     static uint32_t z21LastInfoBroadcast;
     static IPClient z21Clients[z21clientMAX];
 
-    static uint8_t buffer[Z21_MAX_UDP_SIZE];
-
     static MobaBus *mobaBus;
 
     static uint8_t xpressPin;
 
-    static uint8_t addClientToSlot(IPAddress ip, uint8_t BCFlag);
+    //registers the sender of the packet (ip, port, interface), returns its broadcast flags
+    static uint8_t addClientToSlot(UdpPacket *packet, uint8_t BCFlag);
   
     static void clearClient (uint8_t pos);
     static void clearIPSlots();
@@ -185,12 +190,24 @@ private:
 
     static uint8_t rBus[RBUS_GROUPS * RBUS_GROUP_SIZE];
 
+    //2 bit per turnout in the Z21 format: 0 = unknown, 1 = position 0, 2 = position 1
+    static uint8_t turnoutStates[(TURNOUT_STATE_COUNT + 3) / 4];
+    static void storeTurnout(uint16_t addr, uint8_t dir);
+
+    //answer to one client, it is reached over the interface and port it used
     static void sendLanPacket(IPAddress client , uint16_t DataLen, uint16_t Header, byte *dataString, boolean withXOR);
+    static void sendToClient(uint8_t slot, uint16_t DataLen, uint16_t Header, byte *dataString, boolean withXOR);
 
     static void rBusGetData(uint8_t group, uint8_t *data);
     static void broadcastRbus(uint8_t group);
 
+    //the LAN_X message that describes railState, returns the record length
+    static uint8_t railStateMessage(uint8_t *data);
     static void broadcastRailState(IPAddress *force = NULL);
+    //switch the track power, notifyXNet = false when the change came from the XpressNet
+    static void applyRailPower(bool power, IPAddress *client, bool notifyXNet);
+    static void emergencyStop(IPAddress *client, bool notifyXNet);
+    static void checkShortCircuit();
 
     static uint8_t getLocoInfo(uint16_t addr, uint8_t *data);
     static void setLocoAbo(IPAddress client, uint16_t locoAddr);
@@ -207,16 +224,22 @@ private:
 
     static UdpPacket pkgBuffer;
 
-    static void processLanXPacket(UdpPacket *packet);
+    //rec is one zero padded Z21 record of a received datagram
+    static void processRecord(UdpPacket *packet, uint8_t *rec, uint16_t len);
+    static void processLanXPacket(UdpPacket *packet, uint8_t *rec);
 
 
-    //Ackmanager
+    //Ackmanager, shared by the Z21 clients and the XpressNet
     static IPAddress ackClient;
+    static bool ackXNet;            //the running CV operation was started by the XpressNet
     static bool waitForAck;
     static uint32_t ackStartTime;
-    static int16_t ackCv;
+    static int16_t ackCv;           //0 based
     static uint8_t writeVal;
     static bool cvWrite;
+    //start a CV read/write on the programming track, cv is 0 based,
+    //client == NULL for the XpressNet. Returns false while another operation runs
+    static bool startCv(bool write, uint16_t cv, uint8_t value, IPAddress *client);
     static void sendCvResult(int16_t result);
     static void cvCallback(int16_t result);
 
@@ -255,6 +278,16 @@ public:
     static void driveOnProgTrack(bool activate);
 
     static void setRailPower(bool power, IPAddress *client = NULL);
+
+    //called by the XpressNet library when a throttle changed the power state
+    static void xnetPowerChanged(uint8_t state);
+
+    //turnout position in the Z21 format: 0 = unknown, 1 = position 0, 2 = position 1
+    static uint8_t getTurnoutInfo(uint16_t addr);
+
+    //CV read/write requested by an XpressNet throttle, cv is 0 based
+    static void xnetReadCV(uint16_t cv);
+    static void xnetWriteCV(uint16_t cv, uint8_t value);
 
     static uint8_t getClientId(IPAddress ip);
 

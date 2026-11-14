@@ -135,10 +135,12 @@ bool WiFiClass::setHostname(const char *hostname){
 
 bool WiFiClass::connectToAP(const char * ssid, const char * pwd){
     //Set the wifi Mode
-    wifi->print("AT+CWMODE=1\r\n");
+    //_CUR: the mode is not written into the flash of the module on every start
+    wifi->print(oldCmd ? "AT+CWMODE=1\r\n" : "AT+CWMODE_CUR=1\r\n");
     if(!checkForOk(1000)) return false;
     activeMode = Station_Mode;
     stationMode = true;
+    apActive = false;
 
     //remember the credentials for the reconnect
     strncpy(this->ssid, ssid, WIFI_SSID_MAX_LEN);
@@ -186,45 +188,97 @@ bool WiFiClass::connectToAP(const char * ssid, const char * pwd){
     return ipOk;
 }
 
-bool WiFiClass::startAP(const char * ssid, const char * pwd){
-    //Set the wifi Mode
-    wifi->print("AT+CWMODE=2\r\n");
+bool WiFiClass::startAP(const char * ssid, const char * pwd, IPAddress ip, bool keepStation){
+    storeAP(ssid, pwd, ip);
+    //mode 3 keeps the station, the reconnect still searches the accesspoint of the station
+    wifi->print(keepStation ? "AT+CWMODE_CUR=3\r\n" : "AT+CWMODE_CUR=2\r\n");
     if(!checkForOk(1000)) return false;
-    activeMode = SoftAP_Mode;
-    //an accesspoint does not reconnect to another accesspoint
-    stationMode = false;
+    activeMode = keepStation ? Hybrid_MODE : SoftAP_Mode;
+    //an accesspoint alone does not reconnect to another accesspoint
+    stationMode = keepStation;
     #ifdef DEBUG
     Serial.print("Start Access Point...");
     #endif
-    wifi->print("AT+CWSAP_CUR=\"");
-    wifi->print(ssid);
-    wifi->print("\",\"");
-    wifi->print(pwd);
-    wifi->print("\",1,4,8,0\r\n");
-    if(checkForOk(5000)){
-        #ifdef DEBUG
-        Serial.println("OK!");
-        Serial.print("SSID: ");
-        Serial.println(ssid);
-        Serial.print("PWD: ");
-        Serial.println(pwd);
-        #endif
-        wifi->print("AT+CIPAP_CUR=\"192.168.0.111\",\"192.168.0.111\",\"255.255.255.0\"\r\n");
-        if(checkForOk(5000)){
-            wifi->print("AT+CWDHCPS_CUR=1,3,\"192.168.0.10\",\"192.168.0.25\"\r\n");
-            if(checkForOk(5000)){
-                state = WL_AP_LISTENING;
-                return true;
-            }
+    for(uint8_t what = WIFI_CMD_AP_CONFIG; what <= WIFI_CMD_AP_DHCP; what++){
+        wifi->print("AT+");
+        printApCmd(what);
+        if(!checkForOk(5000)){
+            #ifdef DEBUG
+            Serial.println("FAILED!");
+            #endif
+            if(!keepStation) state = WL_AP_FAILED;
+            return false;
         }
     }
-    
+    apActive = true;
+    if(!keepStation) state = WL_AP_LISTENING;
     #ifdef DEBUG
-    Serial.println("FAILED!");
+    Serial.println("OK!");
     #endif
-    state = WL_AP_FAILED;
-    return false;
-    
+    return true;
+}
+
+void WiFiClass::enableFallbackAP(const char * ssid, const char * pwd, IPAddress ip){
+    storeAP(ssid, pwd, ip);
+    fallbackAP = true;
+}
+
+bool WiFiClass::isAPActive(){
+    return apActive;
+}
+
+void WiFiClass::storeAP(const char *ssid, const char *pwd, IPAddress ip){
+    strncpy(apSsid, ssid, WIFI_SSID_MAX_LEN);
+    apSsid[WIFI_SSID_MAX_LEN] = '\0';
+    strncpy(apPwd, pwd, WIFI_PWD_MAX_LEN);
+    apPwd[WIFI_PWD_MAX_LEN] = '\0';
+    for(uint8_t i = 0; i < 4; i++) apIp[i] = ip[i];
+}
+
+void WiFiClass::printApCmd(uint8_t what){
+    switch(what){
+        case WIFI_CMD_AP_MODE:
+            wifi->print("CWMODE_CUR=3\r\n");
+            break;
+        case WIFI_CMD_AP_CONFIG:
+            //channel 1, WPA2_PSK, max 8 stations, ssid visible
+            wifi->print("CWSAP_CUR=\"");
+            wifi->print(apSsid);
+            wifi->print("\",\"");
+            wifi->print(apPwd);
+            wifi->print("\",1,4,8,0\r\n");
+            break;
+        case WIFI_CMD_AP_IP:{
+            //the accesspoint uses the ip of the station, the clients need no other settings
+            char ip[16];
+            snprintf(ip, sizeof(ip), "%u.%u.%u.%u", apIp[0], apIp[1], apIp[2], apIp[3]);
+            wifi->print("CIPAP_CUR=\"");
+            wifi->print(ip);
+            wifi->print("\",\"");
+            wifi->print(ip);
+            wifi->print("\",\"255.255.255.0\"\r\n");
+            break;
+        }
+        case WIFI_CMD_AP_DHCP:{
+            //16 addresses for the clients that never contain the own address
+            uint8_t first = apIp[3] < 100 ? 100 : 10;
+            wifi->print("CWDHCPS_CUR=1,3,\"");
+            for(uint8_t r = 0; r < 2; r++){
+                wifi->print(apIp[0]);
+                wifi->print('.');
+                wifi->print(apIp[1]);
+                wifi->print('.');
+                wifi->print(apIp[2]);
+                wifi->print('.');
+                wifi->print(r == 0 ? first : first + 15);
+                wifi->print(r == 0 ? "\",\"" : "\"\r\n");
+            }
+            break;
+        }
+        case WIFI_CMD_STA_ONLY:
+            wifi->print("CWMODE_CUR=1\r\n");
+            break;
+    }
 }
 
 WiFiMode WiFiClass::getMode(){
@@ -322,6 +376,7 @@ void WiFiClass::loop(){
     }
     if(state == WL_CONNECTED){
         joinRetries = 0;
+        failedRounds = 0;
     }
 
     if(!pendingCipsend && waitForSend && canSend()){
@@ -815,17 +870,51 @@ void WiFiClass::cmdResult(bool success){
         }
         return;
     }
-    if(!success) return;
+    if(!success){
+        switch (cmdCmd) {
+            case WIFI_CMD_JOIN:
+                //the state machine tries again, reconnectJoin() counts the attempts
+                return;
+            case WIFI_CMD_OPEN:
+            case WIFI_CMD_AP_MODE:
+            case WIFI_CMD_AP_CONFIG:
+            case WIFI_CMD_AP_IP:
+            case WIFI_CMD_AP_DHCP:
+                //try again later instead of repeating the command in every loop
+                reconnectState = RECONNECT_WAIT;
+                reconnectTime = millis();
+                return;
+            default:
+                //static ip, hostname, CIPMUX ("link is builded" when it is already set),
+                //CIPDINFO and the mode switch are not worth a stop, continue
+                break;
+        }
+    }
 
     switch (cmdCmd) {
         case WIFI_CMD_JOIN:
             state = WL_CONNECTED;
             joinRetries = 0;
-            //the module also forgets the static ip and the hostname
-            reconnectState = staticIpSet ? RECONNECT_IP : RECONNECT_HOSTNAME;
+            failedRounds = 0;
+            //the station is back: first the fallback accesspoint is switched off, it
+            //uses the same ip. The module also forgets the static ip and the hostname
+            if(apActive && fallbackAP){
+                reconnectState = RECONNECT_STA_ONLY;
+            }
+            else{
+                reconnectState = staticIpSet ? RECONNECT_IP : RECONNECT_HOSTNAME;
+            }
             #ifdef DEBUG
             Serial.println("reconnect CONNECTED!");
             #endif
+            break;
+        case WIFI_CMD_STA_ONLY:
+            if(success){
+                apActive = false;
+                activeMode = Station_Mode;
+                Serial.println(F("Wifi station is back, accesspoint stopped"));
+            }
+            reconnectState = staticIpSet ? RECONNECT_IP : RECONNECT_HOSTNAME;
             break;
         case WIFI_CMD_IP:
             reconnectState = RECONNECT_HOSTNAME;
@@ -837,17 +926,41 @@ void WiFiClass::cmdResult(bool success){
             if(linkId < WIFI_LINKS){
                 linkIdOccupied[linkId] = true;
             }
-            reconnectState = RECONNECT_IDLE;
             clearSendQueue();
             #ifdef DEBUG
             Serial.println("wifi link opened!");
             #endif
+            if(stationMode && state != WL_CONNECTED){
+                //the link serves the fallback accesspoint, keep searching the station
+                reconnectState = RECONNECT_WAIT;
+                reconnectTime = millis();
+            }
+            else{
+                reconnectState = RECONNECT_IDLE;
+            }
             break;
         case WIFI_CMD_CIPMUX:
             reconnectState = RECONNECT_DINFO;
             break;
         case WIFI_CMD_CIPDINFO:
             reconnectState = RECONNECT_OPEN;
+            break;
+        case WIFI_CMD_AP_MODE:
+            reconnectState = RECONNECT_AP_CONFIG;
+            break;
+        case WIFI_CMD_AP_CONFIG:
+            reconnectState = RECONNECT_AP_IP;
+            break;
+        case WIFI_CMD_AP_IP:
+            reconnectState = RECONNECT_AP_DHCP;
+            break;
+        case WIFI_CMD_AP_DHCP:
+            apActive = true;
+            activeMode = Hybrid_MODE;
+            Serial.print(F("Wifi station not reachable, accesspoint started: "));
+            Serial.println(apSsid);
+            //the udp link has to be (re)opened for the clients of the accesspoint
+            reconnectState = RECONNECT_CIPMUX;
             break;
         default:
             break;
@@ -903,6 +1016,11 @@ void WiFiClass::markWifiLost(){
         Serial.println("wifi connection lost!");
         #endif
     }
+    else if(reconnectState != RECONNECT_IDLE){
+        //a failed join also reports WIFI DISCONNECT, the running reconnect
+        //(or the wait for the next attempt) already takes care of it
+        return;
+    }
     if(!cmdActive()){
         reconnectState = RECONNECT_LINK;
         reconnectTime = millis();
@@ -919,7 +1037,7 @@ void WiFiClass::clearSendQueue(){
 
 void WiFiClass::reconnectStateMachine(uint32_t now){
     if(cmdExpected){
-        if(cmdStart + cmdTimeout <= now){
+        if(now - cmdStart >= cmdTimeout){
             //the module did not answer
             #ifdef DEBUG
             Serial.println("reconnect timeout!");
@@ -931,6 +1049,11 @@ void WiFiClass::reconnectStateMachine(uint32_t now){
                 if(reconnectState == RECONNECT_LINK){
                     reconnectNext();
                 }
+            }
+            else if(reconnectState >= RECONNECT_AP_MODE && reconnectState <= RECONNECT_AP_DHCP){
+                //the accesspoint is tried again after the next failed round
+                reconnectState = RECONNECT_WAIT;
+                reconnectTime = now;
             }
             else if(reconnectState != RECONNECT_WAIT && reconnectState != RECONNECT_IDLE){
                 //start again, reconnectJoin() gives up after a few attempts
@@ -971,12 +1094,29 @@ void WiFiClass::reconnectStateMachine(uint32_t now){
         case RECONNECT_DINFO:
             reconnectDinfo();
             break;
-        case RECONNECT_WAIT:
-            if(now >= reconnectTime + WIFI_RECONNECT_INTERVAL){
+        case RECONNECT_WAIT:{
+            uint32_t interval = apActive ? WIFI_FALLBACK_RECONNECT_INTERVAL : WIFI_RECONNECT_INTERVAL;
+            if(now - reconnectTime >= interval){
                 joinRetries = 0;
                 reconnectState = RECONNECT_LINK;
                 reconnectTime = now;
             }
+            break;
+        }
+        case RECONNECT_AP_MODE:
+            reconnectApStep(RECONNECT_AP_MODE, WIFI_CMD_AP_MODE);
+            break;
+        case RECONNECT_AP_CONFIG:
+            reconnectApStep(RECONNECT_AP_CONFIG, WIFI_CMD_AP_CONFIG);
+            break;
+        case RECONNECT_AP_IP:
+            reconnectApStep(RECONNECT_AP_IP, WIFI_CMD_AP_IP);
+            break;
+        case RECONNECT_AP_DHCP:
+            reconnectApStep(RECONNECT_AP_DHCP, WIFI_CMD_AP_DHCP);
+            break;
+        case RECONNECT_STA_ONLY:
+            reconnectApStep(RECONNECT_STA_ONLY, WIFI_CMD_STA_ONLY);
             break;
         default:
             break;
@@ -984,7 +1124,12 @@ void WiFiClass::reconnectStateMachine(uint32_t now){
 }
 
 void WiFiClass::reconnectNext(){
-    if(state != WL_CONNECTED){
+    bool linkUp = linkId < WIFI_LINKS && linkIdOccupied[linkId];
+    if(apActive && !linkUp){
+        //the clients of the accesspoint need the link, the station can wait
+        reconnectState = RECONNECT_CIPMUX;
+    }
+    else if(state != WL_CONNECTED){
         reconnectJoin();
     }
     else{
@@ -995,11 +1140,18 @@ void WiFiClass::reconnectNext(){
 
 void WiFiClass::reconnectJoin(){
     if(!stationMode){
-        reconnectState = RECONNECT_WAIT;
-        reconnectTime = millis();
+        //accesspoint only, there is no station to search
+        reconnectState = RECONNECT_IDLE;
         return;
     }
     if(joinRetries >= 3){
+        //this round failed
+        if(failedRounds < 255) failedRounds++;
+        if(fallbackAP && !apActive && failedRounds >= WIFI_FALLBACK_ROUNDS){
+            //hybrid mode: open the own accesspoint next to the station, non blocking
+            reconnectState = RECONNECT_AP_MODE;
+            return;
+        }
         reconnectState = RECONNECT_WAIT;
         reconnectTime = millis();
         return;
@@ -1062,6 +1214,12 @@ void WiFiClass::reconnectCipmux(){
 void WiFiClass::reconnectDinfo(){
     reconnectState = RECONNECT_DINFO;
     sendCmd(F("AT+CIPDINFO=1\r\n"), WIFI_CMD_CIPDINFO, 3000);
+}
+
+void WiFiClass::reconnectApStep(RECONNECT_STATE st, uint8_t what){
+    reconnectState = st;
+    sendCmd(F("AT+"), what, 5000);
+    printApCmd(what);
 }
 
 void WiFiClass::reconnectStartLink(){
@@ -1204,7 +1362,7 @@ void WiFiClass::finishSend(){
 }
 
 bool WiFiClass::canSend(){
-    return state == WL_CONNECTED || state == WL_AP_LISTENING || state == WL_AP_CONNECTED;
+    return state == WL_CONNECTED || apActive || state == WL_AP_LISTENING || state == WL_AP_CONNECTED;
 }
 
 uint8_t WiFiClass::getFreeLinkID(){

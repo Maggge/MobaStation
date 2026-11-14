@@ -26,8 +26,14 @@
 #include "Eth_Interface.h"
 #include "WiFiUdp.h"
 
-#define STANDARD_AP_SSID "MobaStation"
-#define STANDARD_AP_PWD "MobaStation"
+//accesspoint of the SoftAP mode and of the hybrid fallback,
+//set your own password in MobaStationConfig.h, everybody knows this one
+#ifndef WIFI_AP_SSID
+#define WIFI_AP_SSID "MobaStation"
+#endif
+#ifndef WIFI_AP_PWD
+#define WIFI_AP_PWD "MobaStation"
+#endif
 
 class ESP_AT_Wifi : public Eth_Interface {
 private:
@@ -43,23 +49,29 @@ private:
 
     IPAddress _ip;
     IPAddress _subnet;
-    uint8_t reconnectFailures = 0;
 
-    //runs after WiFi.loop(), the link is reopened by the reconnect state machine
-    void handleReconnect();
+    void printAP(const char * ssid, const char * pwd);
     
 public:
+    /**
+     * @param mode Station_Mode: only the accesspoint of ssid/pwd
+     *             SoftAP_Mode: own accesspoint WIFI_AP_SSID/WIFI_AP_PWD
+     *             Hybrid_MODE: station, the own accesspoint is started when the station
+     *             is not reachable. The station is still searched in the background and
+     *             replaces the accesspoint as soon as it is back.
+     */
     ESP_AT_Wifi(HardwareSerial *serial, const char *ssid, const char *pwd, WiFiMode mode = Hybrid_MODE);
 
     bool begin(uint16_t port, IPAddress ip, IPAddress subnetMask);
-    bool send(IPAddress client, uint8_t *data);
+    bool send(IPAddress client, uint16_t dstPort, uint8_t *data);
     bool receivePacket(UdpPacket *pkg);
 
     bool setIP(IPAddress ip);
     bool setIP(const char *ip);
     bool connectToAP(const char * ssid, const char * pwd);
-    bool startAP(const char * ssid, const char * pwd);
-    //try again to reach the accesspoint, in hybrid mode this falls back to an accesspoint
+    //blocking, only for the setup. keepStation = true runs the accesspoint next to the station
+    bool startAP(const char * ssid, const char * pwd, bool keepStation = false);
+    //search the accesspoint now instead of waiting for the next attempt, never blocks
     void reconnect();
     
 };

@@ -26,6 +26,14 @@
 #include <stdarg.h>
 #include "WiFi.h"
 
+//the WiFi files are compiled without MobaStation.h, so they pick up the
+//user configuration themselves (WIFI_* settings)
+#if defined(__has_include)
+#  if __has_include("MobaStationConfig.h")
+#    include "MobaStationConfig.h"
+#  endif
+#endif
+
 typedef __FlashStringHelper FSH;
 #define GETFLASH(addr) pgm_read_byte_near(addr)
 
@@ -41,6 +49,18 @@ typedef __FlashStringHelper FSH;
 //how long a single AT+CWJAP of a reconnect may take
 #ifndef WIFI_RECONNECT_JOIN_TIMEOUT
 #define WIFI_RECONNECT_JOIN_TIMEOUT 12000
+#endif
+
+//hybrid mode: after this many failed reconnect rounds (3 joins each) the own
+//accesspoint is started next to the station
+#ifndef WIFI_FALLBACK_ROUNDS
+#define WIFI_FALLBACK_ROUNDS 3
+#endif
+
+//while the fallback accesspoint runs the station is searched less often,
+//every join attempt makes the accesspoint unreachable for a moment
+#ifndef WIFI_FALLBACK_RECONNECT_INTERVAL
+#define WIFI_FALLBACK_RECONNECT_INTERVAL 60000
 #endif
 
 //the debug build is close to the ram limit of the mega, so the send queue is
@@ -74,6 +94,11 @@ typedef __FlashStringHelper FSH;
 #define WIFI_CMD_SERVER 5
 #define WIFI_CMD_CIPMUX 6
 #define WIFI_CMD_CIPDINFO 7
+#define WIFI_CMD_AP_MODE 8
+#define WIFI_CMD_AP_CONFIG 9
+#define WIFI_CMD_AP_IP 10
+#define WIFI_CMD_AP_DHCP 11
+#define WIFI_CMD_STA_ONLY 12
 
 class WiFiClass{
 private:
@@ -121,6 +146,17 @@ private:
     uint8_t linkId = 255;
     uint16_t tcpServerPort = 0;     //restart the tcp server after a reconnect
 
+    //---------------- accesspoint ----------------
+    bool apActive = false;          //an own accesspoint runs (SoftAP or hybrid fallback)
+    bool fallbackAP = false;        //hybrid mode: start the accesspoint when the station is lost
+    uint8_t failedRounds = 0;       //reconnect rounds without success
+    char apSsid[WIFI_SSID_MAX_LEN + 1] = "";
+    char apPwd[WIFI_PWD_MAX_LEN + 1] = "";
+    uint8_t apIp[4] = {192, 168, 0, 111};
+    void storeAP(const char *ssid, const char *pwd, IPAddress ip);
+    //prints one of the accesspoint commands without the leading "AT+"
+    void printApCmd(uint8_t what);
+
     //response of the AT command that was started by the reconnect state machine
     uint8_t cmdCmd = WIFI_CMD_NONE;
     bool cmdExpected = false;
@@ -148,6 +184,7 @@ private:
     void reconnectCipmux();
     void reconnectDinfo();
     void reconnectStartLink();
+    void reconnectApStep(RECONNECT_STATE st, uint8_t what);
 
     void sendCmd(const __FlashStringHelper *cmd, uint8_t what, uint32_t timeout);
     //wifi connection lost, all links are gone with it
@@ -174,7 +211,13 @@ public:
     bool setIP(const char *ip);
     bool setHostname(const char *hostname);
     bool connectToAP(const char * ssid, const char * pwd);
-    bool startAP(const char * ssid, const char * pwd);
+    //blocking, keepStation = true runs the accesspoint next to the station (CWMODE 3),
+    //the accesspoint uses ip as its own address
+    bool startAP(const char * ssid, const char * pwd, IPAddress ip, bool keepStation = false);
+    //hybrid mode: the reconnect starts this accesspoint on its own, never blocking,
+    //after WIFI_FALLBACK_ROUNDS failed rounds and switches it off when the station is back
+    void enableFallbackAP(const char * ssid, const char * pwd, IPAddress ip);
+    bool isAPActive();
 
     WiFiMode getMode();
     WL_STATE getStatus();

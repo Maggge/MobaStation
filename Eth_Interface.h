@@ -30,7 +30,9 @@ public:
     virtual ~Eth_Interface() {}
 
     virtual bool begin(uint16_t port, IPAddress ip, IPAddress subnetMask) = 0;
-    virtual bool send(IPAddress client , uint8_t *data) = 0;
+    //data is a complete Z21 record, data[0] is its length
+    virtual bool send(IPAddress client, uint16_t port, uint8_t *data) = 0;
+    //fills ip, port, dataLength and data, the caller sets iface
     virtual bool receivePacket(UdpPacket *pkg) = 0;
 };
 

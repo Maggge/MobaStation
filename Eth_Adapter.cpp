@@ -69,13 +69,13 @@ bool Eth_Adapter::initStack(){
     return true;
 }
 
-bool Eth_Adapter::send(IPAddress client , uint8_t *data){
+bool Eth_Adapter::send(IPAddress client, uint16_t dstPort, uint8_t *data){
     #ifdef DEBUG
     Serial.print("Send Packet to ");
     Serial.println(client);
     #endif
-    //--------------------------------------------   
-    if(!Udp.beginPacket(client, port)){
+    //--------------------------------------------
+    if(!Udp.beginPacket(client, dstPort)){
         #ifdef DEBUG
         Serial.println("Send Packet failed");
         #endif
@@ -116,6 +116,7 @@ bool Eth_Adapter::receivePacket(UdpPacket *pkg){
             pkgSize = Z21_MAX_UDP_SIZE;
         }
         pkg->ip = Udp.remoteIP();
+        pkg->port = Udp.remotePort();
         pkg->dataLength = pkgSize;
         Udp.read(pkg->data, pkgSize);
         return true;
