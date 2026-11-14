@@ -180,8 +180,41 @@ void MobaStation::setTurnout(uint16_t addr, bool dir, bool power){
   }
 }
 
+#ifdef MOBASTATION_LOOP_STATS
+//time between two calls of loop(): average and maximum over 10 seconds
+static void loopStats(){
+  static uint32_t last = 0, window = 0, count = 0, sum = 0, maxT = 0;
+  uint32_t now = micros();
+  if(last != 0){
+    uint32_t d = now - last;
+    sum += d;
+    if(d > maxT) maxT = d;
+    count++;
+  }
+  last = now;
+  if(millis() - window >= 10000){
+    window = millis();
+    if(count > 0){
+      Serial.print(F("Loop: "));
+      Serial.print(count / 10);
+      Serial.print(F("/s, avg "));
+      Serial.print(sum / count);
+      Serial.print(F(" us, max "));
+      Serial.print(maxT);
+      Serial.println(F(" us"));
+    }
+    count = sum = maxT = 0;
+    last = micros();    //the printing above must not count as a slow loop
+  }
+}
+#endif
+
 void MobaStation::loop(){
   uint32_t currentTime = millis();
+
+  #ifdef MOBASTATION_LOOP_STATS
+  loopStats();
+  #endif
 
   if(!railPower){
     if(currentTime - ledLastBlink > 100){

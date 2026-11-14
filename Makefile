@@ -42,8 +42,12 @@ setup:
 	@[ -f MobaStationConfig.h ] || { cp MobaStationConfig.example.h MobaStationConfig.h; \
 		echo "MobaStationConfig.h created, fill in your settings"; }
 
+# extra compiler flags, eg. make upload EXTRA_FLAGS=-DMOBASTATION_LOOP_STATS
+EXTRA_FLAGS ?=
+
 build:
 	$(ARDUINO_CLI) compile --fqbn $(FQBN) $(LIBS) --warnings default \
+		--build-property "build.extra_flags=$(EXTRA_FLAGS)" \
 		--output-dir $(BUILD_DIR) $(SKETCH)
 
 upload: build

@@ -54,6 +54,11 @@ make upload SKETCH=examples/MobaStationEth PORT=/dev/ttyUSB1
 ```
 
 All settings (WiFi, IP or DHCP, motor shield, MobaBus, XpressNet) are in MobaStationConfig.h, the sketches need no changes.
+MobaBus modules only get turnout commands above `DCC_TURNOUT_ADDRESS_RANGE` (default 2047 = all turnouts are DCC),
+set it eg. to 1000 for DCC decoders 1-1000 and MobaBus from 1001.
+
+`examples/MobaStationEffects` runs MobaBus light effects (house with TV, candle, level crossing) on free pins of the Mega,
+without CAN bus. `make upload EXTRA_FLAGS=-DMOBASTATION_LOOP_STATS` prints the loop time every 10 seconds.
 `extras/z21test.py IP info|power on|loco 3 40|turnout 5 1|listen` sends single Z21 commands.
 
 The <a href=https://github.com/Maggge/MobaStation/releases>releases</a> contain prebuild firmware plus the Config Tool,

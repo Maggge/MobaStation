@@ -212,6 +212,8 @@ def main(argv):
     elif cmd == 'turnout':
         fadr = int(argv[3]) - 1
         pos = int(argv[4]) & 1
+        # subscribe first: the answer of a MobaBus module comes as broadcast
+        z.ask(record(0x50, struct.pack('<I', 0x00000001)), timeout=0.2)
         z.send(x_record(0x53, fadr >> 8, fadr & 0xFF, 0x88 | pos))
         time.sleep(0.2)
         recs = z.ask(x_record(0x53, fadr >> 8, fadr & 0xFF, 0x80 | pos))

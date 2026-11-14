@@ -135,7 +135,8 @@ MobaBus, XpressNet) from this file, they need no changes.
 //#define DEFAULT_TURNOUT_MODE Combined
 //
 // in Combined mode all turnouts up to this address are driven by DCC,
-// the addresses above by MobaBus. Max = 2047
+// the addresses above by MobaBus. With 2047 MobaBus gets no turnout commands at all,
+// eg. 1000: DCC decoders 1-1000, MobaBus modules (also local ones) from 1001. Max = 2047
 //#define DCC_TURNOUT_ADDRESS_RANGE 2047
 
 /////////////////////////////////////////////////////////////////////////////////
