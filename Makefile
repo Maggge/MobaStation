@@ -56,8 +56,10 @@ upload: build
 monitor:
 	$(ARDUINO_CLI) monitor --port $(PORT) --config baudrate=$(BAUD)
 
+# make log RESET=noreset listens without restarting the board
+RESET ?=
 log:
-	python3 extras/serial_log.py $(PORT) $(SECONDS) $(BAUD)
+	python3 extras/serial_log.py $(PORT) $(SECONDS) $(BAUD) $(RESET)
 
 z21test:
 	python3 extras/z21test.py $(Z21_IP) selftest

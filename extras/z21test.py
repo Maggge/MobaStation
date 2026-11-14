@@ -6,6 +6,8 @@
   z21test.py IP power on|off          track power
   z21test.py IP loco ADDR SPEED [r]   drive a loco with 128 steps (0-126, r = reverse)
   z21test.py IP turnout ADDR 0|1      switch a turnout (ADDR from 1)
+  z21test.py IP cv ADDR CV [VALUE]    read (or write and read back) a CV of an accessory
+                                      (POM accessory, eg. MobaBus modules: cv 1020 33 50)
   z21test.py IP listen [SECONDS]      subscribe to all broadcasts and print them
 
 The selftest switches the track power on for a moment and uses loco 9999 and
@@ -217,6 +219,22 @@ def main(argv):
         z.send(x_record(0x53, fadr >> 8, fadr & 0xFF, 0x88 | pos))
         time.sleep(0.2)
         recs = z.ask(x_record(0x53, fadr >> 8, fadr & 0xFF, 0x80 | pos))
+    elif cmd == 'cv':
+        # POM accessory (Z21 spec 6.9/6.11): decoder and output pair after RCN-213
+        a = int(argv[3]) - 1
+        word = (((a // 4 + 1) & 0x1FF) << 4) | 0x08 | ((a % 4) << 1)
+        c = int(argv[4]) - 1
+        if len(argv) > 5:
+            z.send(x_record(0xE6, 0x31, word >> 8, word & 0xFF, 0xEC | (c >> 8), c & 0xFF, int(argv[5]) & 0xFF))
+            time.sleep(0.2)
+        recs = z.ask(x_record(0xE6, 0x31, word >> 8, word & 0xFF, 0xE4 | (c >> 8), c & 0xFF, 0), timeout=1.5)
+        recs = [r for r in recs if r[2] == 0x40 and (r[4] == 0x64 or (r[4] == 0x61 and r[5] in (0x12, 0x13)))]
+        if not recs:
+            print('no CV answer from', argv[1])
+            return 1
+        for r in recs:
+            print(describe(r))
+        return 0 if recs[-1][4] == 0x64 else 1
     elif cmd == 'listen':
         z.send(record(0x50, struct.pack('<I', 0x00010101)))
         end = time.time() + (float(argv[3]) if len(argv) > 3 else 30)

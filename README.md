@@ -57,6 +57,10 @@ All settings (WiFi, IP or DHCP, motor shield, MobaBus, XpressNet) are in MobaSta
 MobaBus modules only get turnout commands above `DCC_TURNOUT_ADDRESS_RANGE` (default 2047 = all turnouts are DCC),
 set it eg. to 1000 for DCC decoders 1-1000 and MobaBus from 1001.
 
+MobaBus modules are configured with "POM accessory" (CV programming on the main for accessory decoders), eg.
+`python3 extras/z21test.py 192.168.30.111 cv 1020 33 50` sets CV33 of the module at address 1020 and reads it back.
+The CVs are described in the README of MobaBus.
+
 `examples/MobaStationEffects` runs MobaBus light effects (house with TV, candle, level crossing) on free pins of the Mega,
 without CAN bus. `make upload EXTRA_FLAGS=-DMOBASTATION_LOOP_STATS` prints the loop time every 10 seconds.
 `extras/z21test.py IP info|power on|loco 3 40|turnout 5 1|listen` sends single Z21 commands.

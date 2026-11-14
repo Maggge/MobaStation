@@ -33,6 +33,13 @@ void (*MobaStation::broadcastEventHandler)(uint16_t DataLen, uint16_t Header, by
 MobaBus *MobaStation::mobaBus;
 
 XpressNetMasterClass *MobaStation::XpressNet;
+IPAddress MobaStation::pomClient;
+bool MobaStation::pomPending;
+bool MobaStation::pomBitWrite;
+uint8_t MobaStation::pomBitData;
+uint16_t MobaStation::pomAddress;
+uint16_t MobaStation::pomCv;
+uint32_t MobaStation::pomStart;
 uint8_t MobaStation::xpressPin;
 XpressNetClient MobaStation::xpressNetClients[MAX_XPRESSNET_CLIENTS];
 
@@ -157,6 +164,11 @@ void MobaStation::attachMobaBus(MobaBus *m){
 }
 
 //route a turnout command to DCC and/or MobaBus according to the current turnout mode
+bool MobaStation::isMobaBusTurnout(uint16_t addr){
+  if(mobaBus == NULL) return false;
+  return turnoutMode == MobaBus_Only || (turnoutMode == Combined && addr > dccAddrRange);
+}
+
 //addr is the turnout number starting at 1
 void MobaStation::setTurnout(uint16_t addr, bool dir, bool power){
   if(addr == 0) return;
@@ -170,13 +182,11 @@ void MobaStation::setTurnout(uint16_t addr, bool dir, bool power){
     }
     broadcastTurnout(addr, dir);
   }
-  if(turnoutMode == MobaBus_Only || (turnoutMode == Combined && addr > dccAddrRange)){
-    if(mobaBus != NULL){
-      uint8_t data[2];
-      data[0] = dir;
-      data[1] = power;
-      mobaBus->sendPkg(ACCESSORIE, addr, SET, 2, data);
-    }
+  if(isMobaBusTurnout(addr)){
+    uint8_t data[2];
+    data[0] = dir;
+    data[1] = power;
+    mobaBus->sendPkg(ACCESSORIE, addr, SET, 2, data);
   }
 }
 
@@ -238,6 +248,15 @@ void MobaStation::loop(){
   DCC::loop();
 
   checkShortCircuit();
+
+  //a MobaBus module did not answer a POM read in time
+  if(pomPending && currentTime - pomStart > 1000){
+    pomPending = false;
+    if(!pomBitWrite){
+      uint8_t data[2] = {LAN_X_CV_NACK, 0x13};
+      sendLanPacket(pomClient, 0x07, LAN_X_HEADER, data, true);
+    }
+  }
 
   //the DCC library should always report a result, but if it does not,
   //answer the client and release the programming track instead of blocking forever
@@ -306,6 +325,10 @@ void MobaStation::processMobaBus(){
     }
     Serial.println();
     #endif
+    if(pkg.meta.cmd == CONFIG_INFO){
+      mobaBusConfigInfo(&pkg);
+      return;
+    }
     if(pkg.meta.cmd != INFO) return;
 
     if(pkg.len < 1) return;   //every info carries at least one data byte
@@ -753,19 +776,15 @@ void MobaStation::processLanXPacket(UdpPacket *packet, uint8_t *rec){
       }
     }
     else if (rec[5] == 0x31) {  //DB0
-      #ifdef DEBUG
-      Serial.println("LAN_X_CV_POM_ACCESSORY - NOT IMPLEMENTED YET"); 
-      #endif
+      accessoryPom(packet, rec);
     }
     break;      
   case LAN_X_GET_TURNOUT_INFO: {
     uint16_t addr = ((rec[5] << 8) + rec[6]) + 1; //Z21 - Protocol 0=1, 1=2, .....
 
-    if(turnoutMode == MobaBus_Only || (turnoutMode == Combined && addr > dccAddrRange)){
+    if(isMobaBusTurnout(addr)){
       //the module answers on the bus, processMobaBus() broadcasts the position
-      if(mobaBus != NULL){
-        mobaBus->sendPkg(ACCESSORIE, addr, GET, 0, data);
-      }
+      mobaBus->sendPkg(ACCESSORIE, addr, GET, 0, data);
     }
     else{
       //DCC decoders give no feedback, answer with the last switched position
@@ -933,6 +952,86 @@ void MobaStation::xnetReadCV(uint16_t cv){
 void MobaStation::xnetWriteCV(uint16_t cv, uint8_t value){
   if(XpressNet == NULL) return;
   if(cv > 1023 || !startCv(true, cv, value, NULL)) XpressNet->setCVNack();
+}
+
+//LAN_X_CV_POM_ACCESSORY_WRITE_BYTE/_WRITE_BIT/_READ_BYTE (Z21 spec 6.9 - 6.11):
+//DB1 DB2 = ((decoder address & 0x1FF) << 4) | CDDD, DB3 = option | CV bits 9-8, DB4 = CV bits 7-0
+void MobaStation::accessoryPom(UdpPacket *packet, uint8_t *rec){
+  uint16_t word = ((uint16_t)rec[6] << 8) | rec[7];
+  uint16_t decoder = (word >> 4) & 0x1FF;
+  uint8_t cddd = word & 0x0F;
+  //RCN-213 like setTurnout(): turnout = (decoder - 1) * 4 + port + 1, the output pair DDD/2 is
+  //the port. Without output (C = 0) the CV belongs to the first turnout of the decoder
+  uint8_t port = (cddd & 0x08) ? (cddd & 0x07) >> 1 : 0;
+  uint16_t addr = decoder == 0 ? 0 : (decoder - 1) * 4 + port + 1;
+  uint16_t cv = (((uint16_t)(rec[8] & 0x03) << 8) | rec[9]) + 1;
+  uint8_t option = rec[8] & 0xFC;
+  #ifdef DEBUG
+  Serial.print(F("POM accessory "));
+  Serial.print(addr);
+  Serial.print(F(" CV"));
+  Serial.println(cv);
+  #endif
+
+  if(addr == 0 || !isMobaBusTurnout(addr)){
+    //a DCC accessory decoder: the DCC library has no accessory POM and reading needs RailCom
+    if(option == 0xE4){
+      uint8_t data[2] = {LAN_X_CV_NACK, 0x13};
+      sendLanPacket(packet->ip, 0x07, LAN_X_HEADER, data, true);
+    }
+    return;
+  }
+
+  uint8_t data[3] = {(uint8_t)(cv >> 8), (uint8_t)cv, rec[10]};
+  if(option == 0xEC){
+    //write byte, no answer to the client (like the Z21)
+    mobaBus->sendPkg(ACCESSORIE, addr, CONFIG_WRITE, 3, data);
+    return;
+  }
+  if(option != 0xE4 && option != 0xE8) return;
+  //read byte, or the read of a bit write: the answer comes with CONFIG_INFO
+  pomPending = true;
+  pomBitWrite = option == 0xE8;
+  pomBitData = rec[10];
+  pomClient = packet->ip;
+  pomAddress = addr;
+  pomCv = cv;
+  pomStart = millis();
+  mobaBus->sendPkg(ACCESSORIE, addr, CONFIG_READ, 2, data);
+}
+
+void MobaStation::mobaBusConfigInfo(MobaBus_Packet *pkg){
+  if(pkg->len < 4) return;
+  uint16_t cv = ((uint16_t)pkg->data[0] << 8) | pkg->data[1];
+  uint8_t value = pkg->data[2];
+  bool ok = pkg->data[3] == CV_OK;
+  #ifdef DEBUG
+  Serial.print(F("MobaBus CV"));
+  Serial.print(cv);
+  Serial.print(F(" = "));
+  Serial.print(value);
+  Serial.print(F(" status "));
+  Serial.println(pkg->data[3]);
+  #endif
+  if(!pomPending || pkg->meta.address != pomAddress || cv != pomCv) return;
+  pomPending = false;
+  if(pomBitWrite){
+    if(!ok) return;
+    uint8_t bit = pomBitData & 0x07;
+    if(pomBitData & 0x08) value |= (1 << bit);
+    else value &= ~(1 << bit);
+    uint8_t data[3] = {(uint8_t)(cv >> 8), (uint8_t)cv, value};
+    mobaBus->sendPkg(ACCESSORIE, pomAddress, CONFIG_WRITE, 3, data);
+    return;
+  }
+  if(ok){
+    uint8_t data[5] = {LAN_X_CV_RESULT, 0x14, (uint8_t)((cv - 1) >> 8), (uint8_t)(cv - 1), value};
+    sendLanPacket(pomClient, 0x0A, LAN_X_HEADER, data, true);
+  }
+  else{
+    uint8_t data[2] = {LAN_X_CV_NACK, 0x13};
+    sendLanPacket(pomClient, 0x07, LAN_X_HEADER, data, true);
+  }
 }
 
 void MobaStation::sendCvResult(int16_t result){

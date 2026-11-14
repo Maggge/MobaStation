@@ -194,6 +194,40 @@ int main(){
   CHECK(count(eth, B, 0x61, 0x00) == 1, "xnet power off once (%d)", count(eth, B, 0x61, 0x00));
   CHECK(mainMode == POWERMODE::OFF, "track off");
 
+  // 11) POM of accessories on MobaBus (Z21 spec 6.9 - 6.11)
+  MobaBus mbus; MobaStation::attachMobaBus(&mbus); MobaStation::setTurnoutMode(Combined, 1000);
+  auto pom = [&](uint16_t turnout, uint8_t option, uint16_t cvNum, uint8_t value){
+    uint16_t a = turnout - 1, dec = a / 4 + 1, c = cvNum - 1;
+    uint16_t w = ((dec & 0x1FF) << 4) | 0x08 | ((a % 4) << 1);     //C = 1, DDD = port * 2
+    eth.rx.push_back(pkt(B, 21105, x({0xE6, 0x31, (uint8_t)(w >> 8), (uint8_t)w, (uint8_t)(option | (c >> 8)), (uint8_t)c, value})));
+    MobaStation::loop();
+  };
+  auto cvResult = [&](uint16_t cvNum, uint8_t value){
+    for(auto &e: eth.sent) if(e.d[4] == 0x64 && e.d[5] == 0x14 && ((e.d[6] << 8) | e.d[7]) == cvNum - 1 && e.d[8] == value) return true;
+    return false; };
+  mbus.sent.clear(); eth.sent.clear();
+  pom(1001, 0xE4, 33, 0);
+  CHECK(mbus.sent.size() == 1 && mbus.sent[0].meta.cmd == CONFIG_READ && mbus.sent[0].meta.address == 1001 && mbus.sent[0].data[1] == 33,
+        "POM read becomes CONFIG_READ for turnout 1001");
+  mbus.push(ACCESSORIE, 1001, CONFIG_INFO, {0, 33, 77, CV_OK}); MobaStation::loop();
+  CHECK(cvResult(33, 77), "CONFIG_INFO answered as LAN_X_CV_RESULT");
+  mbus.sent.clear();
+  pom(1003, 0xEC, 34, 120);
+  CHECK(mbus.sent.size() == 1 && mbus.sent[0].meta.cmd == CONFIG_WRITE && mbus.sent[0].meta.address == 1003 && mbus.sent[0].data[2] == 120,
+        "POM write to output pair 2 = turnout 1003 (%d)", mbus.sent.empty() ? -1 : mbus.sent[0].meta.address);
+  mbus.sent.clear();
+  pom(1001, 0xE8, 33, 0x08 | 2);         //set bit 2
+  mbus.push(ACCESSORIE, 1001, CONFIG_INFO, {0, 33, 0x01, CV_OK}); MobaStation::loop();
+  CHECK(mbus.sent.size() == 2 && mbus.sent[1].meta.cmd == CONFIG_WRITE && mbus.sent[1].data[2] == 0x05, "bit write = read, set bit, write");
+  eth.sent.clear();
+  pom(1001, 0xE4, 35, 0); fakeMillis += 1200; MobaStation::loop();
+  CHECK(count(eth, B, 0x61, 0x13) == 1, "no answer within 1 s: NACK");
+  eth.sent.clear(); mbus.sent.clear();
+  pom(5, 0xE4, 1, 0);
+  CHECK(mbus.sent.empty() && count(eth, B, 0x61, 0x13) == 1, "DCC accessory: NACK, nothing on MobaBus");
+  mbus.push(ACCESSORIE, 1001, CONFIG_INFO, {0, 1, 9, CV_OK}); MobaStation::loop();
+  CHECK(count(eth, B, 0x64, 0x14) == 0, "CONFIG_INFO without request is ignored");
+
   printf("%s (%d failures)\n", fails ? "FAILED" : "all MobaStation protocol and speed step tests passed", fails);
   return fails != 0;
 }

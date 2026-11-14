@@ -226,6 +226,20 @@ private:
 
     static uint8_t xpressPin;
 
+    //turnouts of MobaBus: MobaBus_Only, or above dccAddrRange in Combined mode
+    static bool isMobaBusTurnout(uint16_t addr);
+
+    //POM of an accessory on MobaBus, the module answers with CONFIG_INFO
+    static IPAddress pomClient;
+    static bool pomPending;
+    static bool pomBitWrite;        //read, change one bit, write back
+    static uint8_t pomBitData;      //0000VPPP of the bit write
+    static uint16_t pomAddress;
+    static uint16_t pomCv;          //CV1 = 1
+    static uint32_t pomStart;
+    static void accessoryPom(UdpPacket *packet, uint8_t *rec);
+    static void mobaBusConfigInfo(MobaBus_Packet *pkg);
+
     //registers the sender of the packet (ip, port, interface), returns its broadcast flags
     static uint8_t addClientToSlot(UdpPacket *packet, uint8_t BCFlag);
   
