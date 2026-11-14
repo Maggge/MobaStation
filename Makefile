@@ -6,6 +6,7 @@
 #   make monitor    interactive serial console (exit with Ctrl+C)
 #   make log        print the serial output for 20 seconds (resets the board)
 #   make z21test    run the Z21 LAN selftest against the station
+#   make test       host tests on the PC (g++, no board needed)
 #
 # Every variable can be overridden: make upload SKETCH=examples/MobaStationEth PORT=/dev/ttyUSB1
 # The settings of the sketch (WiFi, IP, MobaBus, ...) are in MobaStationConfig.h.
@@ -27,10 +28,10 @@ ARDUINO_CLI ?= arduino-cli
 LIBS = --library . --library $(DCC_DIR) --library $(MOBABUS_DIR)
 BUILD_DIR = build/$(notdir $(SKETCH))
 
-.PHONY: help setup build upload monitor log z21test clean
+.PHONY: help setup build upload monitor log z21test test clean
 
 help:
-	@sed -n '3,12p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '3,13p' Makefile | sed 's/^# \{0,1\}//'
 
 setup:
 	$(ARDUINO_CLI) core update-index
@@ -57,5 +58,17 @@ log:
 z21test:
 	python3 extras/z21test.py $(Z21_IP) selftest
 
+# host tests: protocol (MobaStation.cpp + XpressNetMaster.cpp), WiFi driver, Ethernet adapter
+TEST_DIR   = extras/test
+TEST_FLAGS = -std=gnu++17 -DARDUINO=10819 -Wall -Wextra -Wno-unused-parameter -I$(TEST_DIR)/stub -I.
+
+test:
+	$(CXX) $(TEST_FLAGS) -o $(TEST_DIR)/ms_test $(TEST_DIR)/ms_test.cpp XpressNetMaster.cpp
+	$(CXX) $(TEST_FLAGS) -o $(TEST_DIR)/wifi_test $(TEST_DIR)/wifi_test.cpp WiFi_ESP_AT.cpp
+	$(CXX) $(TEST_FLAGS) -o $(TEST_DIR)/eth_test $(TEST_DIR)/eth_test.cpp Eth_Adapter.cpp
+	$(TEST_DIR)/ms_test
+	$(TEST_DIR)/wifi_test
+	$(TEST_DIR)/eth_test
+
 clean:
-	rm -rf build
+	rm -rf build $(TEST_DIR)/ms_test $(TEST_DIR)/wifi_test $(TEST_DIR)/eth_test

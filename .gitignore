@@ -2,6 +2,11 @@
 # (pins, IP settings, WiFi access point password)
 MobaStationConfig.h
 
+# host test binaries (make test)
+extras/test/ms_test
+extras/test/wifi_test
+extras/test/eth_test
+
 # Arduino / arduino-cli build output
 build/
 /arduino/
