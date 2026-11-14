@@ -784,7 +784,8 @@ void MobaStation::processLanXPacket(UdpPacket *packet, uint8_t *rec){
         #ifdef DEBUG
         Serial.println("LAN_X_CV_POM_WRITE_BYTE"); 
         #endif
-        DCC::writeCVByteMain(addr, cv, rec[10]);
+        //Z21 counts from 0 (0 = CV1), the library from 1
+        DCC::writeCVByteMain(addr, cv + 1, rec[10]);
       }
       else if ((rec[8] & 0xFC) == 0xE8) {
         #ifdef DEBUG
@@ -792,7 +793,7 @@ void MobaStation::processLanXPacket(UdpPacket *packet, uint8_t *rec){
         #endif
         byte bitNum = rec[10] & B00000111;
         bool value = rec[10] >> 3;
-        DCC::writeCVBitMain(addr, cv, bitNum, value);
+        DCC::writeCVBitMain(addr, cv + 1, bitNum, value);
       }
       else {
         #ifdef DEBUG
@@ -1031,7 +1032,7 @@ void MobaStation::mobaBusConfigInfo(MobaBus_Packet *pkg){
   uint8_t value = pkg->data[2];
   bool ok = pkg->data[3] == CV_OK;
   if(management != NULL){
-    management->cvResult(pkg->meta.address, cv, value, pkg->data[3]);
+    management->cvResult(pkg->meta.type, pkg->meta.address, cv, value, pkg->data[3]);
   }
   #ifdef DEBUG
   Serial.print(F("MobaBus CV"));
@@ -1041,7 +1042,8 @@ void MobaStation::mobaBusConfigInfo(MobaBus_Packet *pkg){
   Serial.print(F(" status "));
   Serial.println(pkg->data[3]);
   #endif
-  if(!pomPending || pkg->meta.address != pomAddress || cv != pomCv) return;
+  //POM of the Z21 protocol only reaches accessories
+  if(!pomPending || pkg->meta.type != ACCESSORIE || pkg->meta.address != pomAddress || cv != pomCv) return;
   pomPending = false;
   if(pomBitWrite){
     if(!ok) return;
@@ -1840,11 +1842,12 @@ void notifyXNetPOMwriteByte(uint16_t Adr, uint16_t CV, uint8_t data){
   Serial.print("XNet POM byte: Addr ");
   Serial.print(Adr);
   Serial.print(" CV ");
-  Serial.print(CV);
+  Serial.print(CV + 1);
   Serial.print(" = ");
   Serial.println(data);
   #endif
-  DCC::writeCVByteMain(Adr, CV, data);
+  //XpressNet counts from 0 (0 = CV1), the library from 1
+  DCC::writeCVByteMain(Adr, CV + 1, data);
 }
 
 //POM (Operations Mode) write bit, data = 0 0 0 P MMM CCCC (P = value, CCCC = bit number)
@@ -1853,13 +1856,13 @@ void notifyXNetPOMwriteBit(uint16_t Adr, uint16_t CV, uint8_t data){
   Serial.print("XNet POM bit: Addr ");
   Serial.print(Adr);
   Serial.print(" CV ");
-  Serial.print(CV);
+  Serial.print(CV + 1);
   Serial.print(" bit ");
   Serial.println(data & B00001111);
   #endif
   uint8_t bitNum = data & B00000111;
   bool value = bitRead(data, 3);
-  DCC::writeCVBitMain(Adr, CV, bitNum, value);
+  DCC::writeCVBitMain(Adr, CV + 1, bitNum, value);
 }
 
 //----------   management (web interface of the ESP firmware)   ----------
@@ -1953,10 +1956,14 @@ bool MobaStation::setSetting(uint8_t key, int32_t value){
   return true;
 }
 
-bool MobaStation::requestCv(uint16_t address, uint16_t cv, bool write, uint8_t value){
-  if(!isMobaBusTurnout(address)) return false;
+bool MobaStation::requestCv(uint8_t type, uint16_t address, uint16_t cv, bool write, uint8_t value){
+  if(type == FEEDBACK){
+    //feedback modules have their own addresses, they are always on MobaBus
+    if(mobaBus == NULL || address == 0 || address > 0x3FFF) return false;
+  }
+  else if(type != ACCESSORIE || !isMobaBusTurnout(address)) return false;
   uint8_t data[3] = {(uint8_t)(cv >> 8), (uint8_t)cv, value};
-  mobaBus->sendPkg(ACCESSORIE, address, write ? CONFIG_WRITE : CONFIG_READ, write ? 3 : 2, data);
+  mobaBus->sendPkg((MobaDevType)type, address, write ? CONFIG_WRITE : CONFIG_READ, write ? 3 : 2, data);
   return true;
 }
 

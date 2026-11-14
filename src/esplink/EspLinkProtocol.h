@@ -70,6 +70,7 @@ enum EspLinkType : uint8_t {
     ESPLINK_SETTING_GET  = 0x30,    //ESP -> Mega: key (EspLinkSetting)
     ESPLINK_SETTING_SET  = 0x31,    //ESP -> Mega: key, value i32
     ESPLINK_SETTING      = 0x32,    //Mega -> ESP: key, value i32, status (0 = ok)
+    //CVs of MobaBus modules: bit 15 of the address (ESPLINK_CV_FEEDBACK) = feedback module
     ESPLINK_CV_READ      = 0x40,    //ESP -> Mega: address u16, cv u16 (CV1 = 1)
     ESPLINK_CV_WRITE     = 0x41,    //ESP -> Mega: address u16, cv u16, value
     ESPLINK_CV_RESULT    = 0x42,    //Mega -> ESP: address u16, cv u16, value, status (MobaCvStatus, 255 = timeout)
@@ -78,6 +79,10 @@ enum EspLinkType : uint8_t {
     ESPLINK_COMMAND      = 0x50,    //ESP -> Mega: command (EspLinkCommand), arguments
     ESPLINK_LOG          = 0x60,    //Mega -> ESP: text without line end
 };
+
+//address flag of ESPLINK_CV_*: a feedback module (R-Bus) instead of an accessory,
+//MobaBus addresses have 14 bits
+#define ESPLINK_CV_FEEDBACK 0x8000
 
 enum EspLinkRole : uint8_t {
     ESPLINK_ROLE_MEGA = 0,

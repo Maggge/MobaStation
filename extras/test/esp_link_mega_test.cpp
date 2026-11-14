@@ -103,6 +103,17 @@ int main(){
   espSends(esp, ESPLINK_CV_READ, {5, 0, 1, 0}); MobaStation::loop();
   f = written(esp); cv = find(f, ESPLINK_CV_RESULT);
   CHECK(cv && cv->d[5] == 254, "DCC turnout: status 254");
+  // feedback modules have their own addresses: flag in bit 15, always MobaBus
+  mbus.sent.clear();
+  espSends(esp, ESPLINK_CV_WRITE, {3, 0x80, 33, 0, 0x81}); MobaStation::loop();   //feedback 3, CV33 = 0x81
+  CHECK(mbus.sent.size() == 1 && mbus.sent[0].meta.type == FEEDBACK && mbus.sent[0].meta.address == 3 &&
+        mbus.sent[0].meta.cmd == CONFIG_WRITE && mbus.sent[0].data[2] == 0x81, "CV write to a feedback module");
+  mbus.push(FEEDBACK, 3, CONFIG_INFO, {0, 33, 0x81, CV_OK}); MobaStation::loop();
+  f = written(esp); cv = find(f, ESPLINK_CV_RESULT);
+  CHECK(cv && espLinkGet16(&cv->d[0]) == (3 | ESPLINK_CV_FEEDBACK) && cv->d[4] == 0x81 && cv->d[5] == CV_OK, "feedback result keeps the flag");
+  mbus.push(ACCESSORIE, 3, CONFIG_INFO, {0, 33, 9, CV_OK}); MobaStation::loop();
+  f = written(esp); cv = find(f, ESPLINK_CV_RESULT);
+  CHECK(cv && espLinkGet16(&cv->d[0]) == 3, "accessory 3 without the flag");
 
   // discover and module list
   espSends(esp, ESPLINK_DISCOVER, {}); MobaStation::loop();

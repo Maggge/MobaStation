@@ -39,7 +39,7 @@ input,select{width:100%;max-width:320px;padding:8px;border:1px solid var(--line)
 input[type=checkbox]{width:auto}
 table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:middle}
 th{color:var(--muted);font-weight:500;font-size:13px}
-.cv input{width:80px}.muted{color:var(--muted)}.small{font-size:13px}
+.cv input{width:72px}.cv td{padding:8px 4px}.cv button.b{padding:8px 10px}.muted{color:var(--muted)}.small{font-size:13px}
 #log{font:12px/1.5 ui-monospace,monospace;max-height:240px;overflow:auto;white-space:pre-wrap}
 .drive{display:flex;align-items:baseline;gap:12px;margin:8px 0}.drive .v{font-size:40px}
 input[type=range]{max-width:none;padding:0;height:44px;accent-color:var(--accent)}
@@ -48,14 +48,17 @@ input[type=range]{max-width:none;padding:0;height:44px;accent-color:var(--accent
 button.big{flex:1;min-width:80px;padding:12px;white-space:nowrap}
 .st{display:inline-block;min-width:64px;font-size:13px}.st.s0{color:var(--bad)}.st.s1{color:var(--ok)}
 .item{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:8px 0;border-bottom:1px solid var(--line)}
-.item .n{flex:1 1 150px}.item .btns{display:flex;gap:6px;margin-left:auto}
+.item .n{flex:1 1 150px}.item .btns{display:flex;gap:6px;margin-left:auto}.item .sub{font-size:13px;color:var(--muted)}
+.ins{display:flex;flex-wrap:wrap;gap:4px}.in{width:24px;height:24px;border-radius:50%;border:1px solid var(--line);font-size:11px;display:flex;align-items:center;justify-content:center;color:var(--muted)}
+.in.on{background:var(--ok);border-color:var(--ok);color:var(--card)}
+.bits{display:flex;flex-wrap:wrap;gap:4px 12px}.cv .bits input{width:auto;margin:0}.bits label{display:inline-flex;align-items:center;gap:4px;margin:0;color:var(--fg);font-size:14px}
 #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:8px;display:none}
 </style>
 </head>
 <body>
 <header><span class="dot" id="linkDot"></span><h1>MobaStation</h1><span class="small muted" id="netInfo"></span></header>
 <nav id="nav">
-<button data-s="status" class="on">Status</button><button data-s="drive">Steuern</button><button data-s="station">Zentrale</button>
+<button data-s="status" class="on">Status</button><button data-s="drive">Steuern</button><button data-s="prog">Programmieren</button><button data-s="station">Zentrale</button>
 <button data-s="mobabus">MobaBus</button><button data-s="network">Netzwerk</button><button data-s="system">System</button>
 </nav>
 <main>
@@ -77,6 +80,28 @@ button.big{flex:1;min-width:80px;padding:12px;white-space:nowrap}
 <div><div class="k">Laufzeit</div><div class="v" id="uptime">-</div></div>
 <div><div class="k">Link-Fehler Mega / ESP</div><div class="v" id="linkErr">-</div></div>
 <div><div class="k">Z21-Pakete rein / raus</div><div class="v" id="udp">-</div></div></div></div>
+</section>
+
+<section id="prog">
+<div class="card"><h2>Programmiergleis</h2>
+<p class="small muted">Gelesen und geschrieben wird der Decoder auf dem Programmiergleis, dort darf nur eine Lok stehen. Jeder Zugriff dauert einige Sekunden.</p>
+<div class="row"><span class="k">Lokadresse</span><span class="v" id="pAddr">-</span><button class="b" onclick="readAddr()">Adresse lesen</button></div>
+<div class="row"><input id="pNewAddr" type="number" min="1" max="9999" placeholder="Neue Adresse" style="max-width:140px">
+<button class="b" onclick="writeAddr()">Adresse schreiben</button></div>
+<div class="row"><span class="small" id="pMsg"></span></div>
+<div id="pCvs"></div>
+<p class="small muted" id="p29"></p>
+<div class="row"><button class="b" onclick="readCommon()">Alle lesen</button>
+<button class="b d" onclick="factoryReset()">Werkseinstellung (CV8 = 8)</button></div>
+<label>Beliebige CV</label><div class="row cv"><input id="pCv" type="number" min="1" max="1024" placeholder="CV">
+<input id="pVal" type="number" min="0" max="255" placeholder="Wert">
+<button class="b" onclick="progFree(false)">Lesen</button><button class="b" onclick="progFree(true)">Schreiben</button></div></div>
+<div class="card"><h2>Hauptgleis (POM)</h2>
+<p class="small muted">Schreibt eine CV der Lok mit dieser Adresse während der Fahrt. Lesen ist auf dem Hauptgleis nicht möglich (das bräuchte RailCom), der Decoder bestätigt nichts.</p>
+<div class="row cv"><input id="mAddr" type="number" min="1" max="9999" placeholder="Lok" style="width:100px">
+<input id="mCv" type="number" min="1" max="1024" placeholder="CV"><input id="mVal" type="number" min="0" max="255" placeholder="Wert">
+<button class="b" onclick="pomWrite()">Schreiben</button></div>
+<div class="row"><span class="small" id="mMsgPom"></span></div></div>
 </section>
 
 <section id="station">
@@ -118,10 +143,10 @@ button.big{flex:1;min-width:80px;padding:12px;white-space:nowrap}
 <section id="mobabus">
 <div class="card"><h2>Module</h2>
 <div class="row"><button class="b p" onclick="discover()">Module suchen</button><span class="small muted" id="mMsg"></span></div>
-<table><thead><tr><th>Adresse</th><th>Modul</th><th>Slot</th><th></th></tr></thead><tbody id="mods"></tbody></table></div>
+<div id="mods"></div></div>
 <div class="card" id="cvCard" style="display:none"><h2 id="cvTitle">CVs</h2>
 <p class="small muted">Geänderte Werte gelten sofort und auch nach einem Neustart, bis &bdquo;Auf Sketch-Werte zurücksetzen&ldquo;.</p>
-<table><thead><tr><th>CV</th><th>Bedeutung</th><th>Wert</th><th></th></tr></thead><tbody id="cvs"></tbody></table>
+<div style="overflow-x:auto"><table><thead><tr><th>CV</th><th>Bedeutung</th><th>Wert</th><th></th></tr></thead><tbody id="cvs"></tbody></table></div>
 <div class="row"><button class="b" onclick="readAll()">Alle lesen</button><button class="b" onclick="resetCvs()">Auf Sketch-Werte zurücksetzen</button></div>
 <label>Adresse ändern</label><div class="row"><input id="newAddr" type="number" min="1" max="16383" style="max-width:140px">
 <button class="b" onclick="changeAddr()">Übernehmen</button></div></div>
@@ -158,12 +183,17 @@ const $=id=>document.getElementById(id);
 const RAIL={0:['Spannung an','ok'],1:['Nothalt','warn'],2:['Spannung aus','bad'],4:['Kurzschluss','bad'],8:['Programmieren','warn']};
 const TYPES={1:'Ausgang',2:'Doppelspule',3:'Servo',4:'16 Servos (PCA9685)',5:'Belebtes Haus',6:'Kerze / Feuer',7:'Blinklicht',100:'Rückmelder (8 Eingänge)'};
 const SERVO={33:'Winkel Stellung 0',34:'Winkel Stellung 1',35:'Geschwindigkeit (0-255)',36:'Abschaltzeit (x10 ms)'};
-const CVS={2:{33:'Abschaltzeit (x10 ms)'},3:SERVO,4:SERVO,
- 5:{33:'An minimal (x10 s)',34:'An maximal (x10 s)',35:'Aus minimal (x10 s)',36:'Aus maximal (x10 s)',37:'Einschaltzeit (x10 s)',38:'Ausschaltzeit (x10 s)'},
- 6:{33:'Helligkeit (0-255)',34:'Modus (0 Kerze, 1 Feuer)'},7:{33:'Periode (x10 ms)',34:'Überblenden (x10 ms)'}};
+//a CV is a name or {n:name, bits:number of checkboxes (1 = yes/no)}
+const INV={n:'Invertiert',bits:1};
+const CVS={1:{33:INV},2:{33:'Abschaltzeit (x10 ms)',34:INV},3:SERVO,4:SERVO,
+ 5:{33:'An minimal (x10 s)',34:'An maximal (x10 s)',35:'Aus minimal (x10 s)',36:'Aus maximal (x10 s)',37:'Einschaltzeit (x10 s)',38:'Ausschaltzeit (x10 s)',
+  39:'Helligkeit max (0-255)',40:'Helligkeit min, dunkelste TV-Szene'},
+ 6:{33:'Helligkeit max (0-255)',34:'Modus (0 Kerze, 1 Feuer)',35:'Helligkeit min (0-255)'},
+ 7:{33:'Periode (x10 ms)',34:'Überblenden (x10 ms)',35:'Helligkeit max, an (0-255)',36:'Helligkeit min, aus (0-255)'},
+ 100:{33:{n:'Invertierte Eingänge',bits:8}}};
 const BASE={7:'Version',8:'Hersteller (13 = DIY)',30:'Modultyp',31:'Anzahl Adressen'};
 const STATUS={0:'',1:'unbekannte CV',2:'nur lesbar',3:'ungültiger Wert',254:'keine MobaBus-Adresse',255:'keine Antwort'};
-let ws,mods={},cur=null,pending={};
+let ws,mods={},cur=null,pending={},rb={},rbAsked={};
 function toast(t){const e=$('toast');e.textContent=t;e.style.display='block';clearTimeout(e._t);e._t=setTimeout(()=>e.style.display='none',3000)}
 function log(t){const l=$('log');l.textContent+=new Date().toLocaleTimeString()+'  '+t+'\n';l.scrollTop=l.scrollHeight}
 const online=()=>ws&&ws.readyState==1;
@@ -172,10 +202,11 @@ document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>{
  history.replaceState(null,'','#/'+b.dataset.s);
  document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on',x==b));
  document.querySelectorAll('section').forEach(s=>s.classList.toggle('on',s.id==b.dataset.s));
- if(b.dataset.s=='station')cmd({c:'settings'});if(b.dataset.s=='network')loadNet();if(b.dataset.s=='drive')refreshDrive()});
+ if(b.dataset.s=='station')cmd({c:'settings'});if(b.dataset.s=='network')loadNet();if(b.dataset.s=='drive')refreshDrive();if(b.dataset.s=='prog')renderProg();
+ if(b.dataset.s=='mobabus'&&online()&&!Object.keys(mods).length)discover()});
 function connect(){
  ws=new WebSocket('ws://'+location.host+'/ws');
- ws.onopen=()=>{log('Verbunden');cmd({c:'settings'});refreshDrive()};
+ ws.onopen=()=>{log('Verbunden');cmd({c:'settings'});refreshDrive();if($('mobabus').classList.contains('on')&&!Object.keys(mods).length)discover()};
  ws.onclose=()=>{$('linkDot').className='dot bad';setTimeout(connect,2000)};
  ws.onmessage=e=>{const m=JSON.parse(e.data);(H[m.t]||(()=>{}))(m)}}
 const fmtUp=s=>{const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return h+' h '+m+' min'};
@@ -191,36 +222,59 @@ const H={
  setting:m=>{const e=$('s'+m.key);if(!e)return;
   if(m.key==3)e.value=(m.value/1000).toFixed(3);else if(m.key==4)e.checked=!!m.value;else e.value=m.value;
   if(!m.ok)$('sMsg').textContent='Wert abgelehnt'},
- module:m=>{mods[m.slot+':'+m.addr+':'+m.typeId]=m;renderMods()},
- cv:m=>{const id='cv'+m.cv;if(cur&&m.addr==cur.addr){const e=$(id);const s=$(id+'s');
-   if(m.status==0&&e&&m.cv!=1&&m.cv!=9&&m.cv!=8)e.value=m.value;if(s)s.textContent=STATUS[m.status]||('Status '+m.status)}
+ module:m=>{mods[m.slot+':'+m.addr+':'+m.typeId]=m;renderMods();if(!m.addr)return;
+  if(m.typeId==100){const g=Math.floor((m.addr-1)/10);if(!rbAsked[g]){rbAsked[g]=1;cmd({c:'rbus',group:g})}}else askTurnout(m.addr)},
+ rbus:m=>{rb[m.group]=m.data;renderInputs()},
+ cv:m=>{const id='cv'+m.cv;if(cur&&m.addr==cur.addr&&!!m.fb==(cur.typeId==100)){const e=$(id);const s=$(id+'s');
+   if(m.status==0&&e&&m.cv!=1&&m.cv!=9&&!(m.cv==8&&m.value==8)){e.value=m.value;syncBits(m.cv)}if(s)s.textContent=m.status in STATUS?STATUS[m.status]:'Status '+m.status}
   delete pending[m.addr+':'+m.cv]},
  loco:m=>{if(m.addr!=loco.addr)return;loco.steps=m.steps;loco.fn=m.fn;const s=decodeSpeed(m.steps,m.speed);loco.dir=s[1];
   if(Date.now()-userT>800){loco.speed=s[0];$('throttle').value=s[0]}renderLoco()},
- turnout:m=>{tstate[m.addr]=m.state;renderStates()},
+ turnout:m=>{tstate[m.addr]=m.state;renderStates();renderModStates()},
+ prog:m=>progDone(m),
  log:m=>log(m.text)};
-function renderMods(){const t=$('mods');t.innerHTML='';const l=Object.values(mods).sort((a,b)=>a.addr-b.addr);
+function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e}
+function renderMods(){const t=$('mods');t.innerHTML='';
+ const l=Object.values(mods).sort((a,b)=>(a.typeId==100)-(b.typeId==100)||a.addr-b.addr);
  $('mMsg').textContent=l.length+' Module';
- for(const m of l){const tr=document.createElement('tr');const name=TYPES[m.typeId]||('Typ '+m.typeId);
-  const addr=m.addr?m.addr+(m.channels>1?' - '+(m.addr+m.channels-1):''):'<span class="muted">ohne Adresse</span>';
-  tr.innerHTML='<td>'+addr+'</td><td>'+name+'</td><td>'+m.slot+'</td><td class="row"></td>';
-  const c=tr.lastChild;if(m.addr&&m.typeId!=100){
-   for(const [l2,d] of [['Aus',0],['An',1]]){const b=document.createElement('button');b.className='b';b.textContent=l2;b.onclick=()=>cmd({c:'turnout',addr:m.addr,dir:d});c.append(b)}
-   const b=document.createElement('button');b.className='b';b.textContent='CVs';b.onclick=()=>openCv(m);c.append(b)}
-  t.append(tr)}}
-function discover(){mods={};renderMods();$('mMsg').textContent='Suche...';cmd({c:'discover'})}
+ for(const m of l){const d=el('div','item'),n=el('div','n'),fb=m.typeId==100;
+  n.append(el('b','',TYPES[m.typeId]||('Typ '+m.typeId)),
+   el('div','sub',(m.addr?(fb?'Rückmelder ':'Adresse ')+m.addr+(m.channels>1?' - '+(m.addr+m.channels-1):''):'ohne Adresse')+' · Slot '+m.slot));
+  d.append(n);
+  if(fb&&m.addr){const ins=el('div','ins');ins.dataset.a=m.addr;for(let i=1;i<=8;i++)ins.append(el('span','in',i));d.append(ins)}
+  const bt=el('div','btns');
+  if(m.addr&&!fb)for(const [txt,v] of [['Aus',0],['An',1]]){const b=el('button','b',txt);b.dataset.a=m.addr;b.dataset.d=v;b.onclick=()=>switchItem(m.addr,v);bt.append(b)}
+  if(m.addr){const b=el('button','b','CVs');b.onclick=()=>openCv(m);bt.append(b)}
+  d.append(bt);t.append(d)}
+ renderModStates();renderInputs()}
+function renderModStates(){document.querySelectorAll('#mods button[data-d]').forEach(b=>{const s=tstate[b.dataset.a];b.classList.toggle('on',s==Number(b.dataset.d)+1)})}
+function rbGet(a){const g=rb[Math.floor((a-1)/10)];return g?g[(a-1)%10]:undefined}
+function renderInputs(){document.querySelectorAll('#mods .ins').forEach(x=>{const v=rbGet(Number(x.dataset.a));
+ [...x.children].forEach((e,i)=>e.classList.toggle('on',v!==undefined&&!!((v>>i)&1)))})}
+function discover(){mods={};rbAsked={};renderMods();$('mMsg').textContent='Suche...';cmd({c:'discover'})}
 function openCv(m){cur=m;$('cvCard').style.display='block';$('cvTitle').textContent='CVs '+(TYPES[m.typeId]||'')+' an Adresse '+m.addr;
  $('newAddr').value=m.addr;const t=$('cvs');t.innerHTML='';const list=Object.assign({},CVS[m.typeId]||{},BASE);
- for(const cv of Object.keys(list).map(Number).sort((a,b)=>a-b)){const ro=cv in BASE;const tr=document.createElement('tr');tr.className='cv';
-  tr.innerHTML='<td>'+cv+'</td><td>'+list[cv]+'</td><td><input id="cv'+cv+'" type="number" min="0" max="255"'+(ro?' disabled':'')+'></td><td><span class="small muted" id="cv'+cv+'s"></span></td>';
-  if(!ro){const b=document.createElement('button');b.className='b';b.textContent='Schreiben';b.onclick=()=>writeCv(cv);tr.lastChild.prepend(b)}
-  t.append(tr)}
+ for(const cv of Object.keys(list).map(Number).sort((a,b)=>a-b)){const ro=cv in BASE,def=list[cv],bits=def.bits||0;
+  const tr=el('tr','cv');tr.append(el('td','',cv),el('td','',def.n||def));
+  const td=el('td'),inp=el('input');inp.id='cv'+cv;inp.type='number';inp.min=0;inp.max=255;inp.disabled=ro;td.append(inp);
+  const st=el('td');st.append(el('span','small muted'));st.lastChild.id='cv'+cv+'s';
+  if(bits){inp.style.display='none';const w=el('div','bits');w.id='cv'+cv+'b';
+   for(let i=0;i<bits;i++){const lb=el('label'),c=el('input');c.type='checkbox';
+    //a checkbox writes at once, the value is read back
+    c.onchange=()=>{let v=0;w.querySelectorAll('input').forEach((x,k)=>{if(x.checked)v|=1<<k});inp.value=v;writeCv(cv)};
+    lb.append(c,bits>1?String(i+1):'ja');w.append(lb)}
+   td.append(w)}
+  else if(!ro){const b=el('button','b','Schreiben');b.onclick=()=>writeCv(cv);st.prepend(b)}
+  tr.append(td,st);t.append(tr)}
  readAll();$('cvCard').scrollIntoView({behavior:'smooth'})}
-function readAll(){if(!cur)return;document.querySelectorAll('#cvs input').forEach((e,i)=>{const cv=Number(e.id.slice(2));setTimeout(()=>cmd({c:'cv',addr:cur.addr,cv}),i*120)})}
-function writeCv(cv){const v=Number($('cv'+cv).value);if(!(v>=0&&v<=255))return toast('Wert 0-255');cmd({c:'cv',addr:cur.addr,cv,value:v});setTimeout(()=>cmd({c:'cv',addr:cur.addr,cv}),300)}
-function resetCvs(){cmd({c:'cv',addr:cur.addr,cv:8,value:8});toast('Zurückgesetzt');setTimeout(readAll,500);setTimeout(discover,1500)}
+//CV command for the open module, feedback modules have their own addresses
+function mcv(o){cmd(Object.assign({c:'cv',addr:cur.addr},cur.typeId==100?{fb:1}:{},o))}
+function syncBits(cv){const w=$('cv'+cv+'b');if(!w)return;const v=Number($('cv'+cv).value);w.querySelectorAll('input').forEach((x,k)=>x.checked=!!((v>>k)&1))}
+function readAll(){if(!cur)return;document.querySelectorAll('#cvs input[type=number]').forEach((e,i)=>{const cv=Number(e.id.slice(2));setTimeout(()=>mcv({cv}),i*120)})}
+function writeCv(cv){const v=Number($('cv'+cv).value);if(!(v>=0&&v<=255))return toast('Wert 0-255');mcv({cv,value:v});setTimeout(()=>mcv({cv}),300)}
+function resetCvs(){mcv({cv:8,value:8});toast('Zurückgesetzt');setTimeout(readAll,500);setTimeout(discover,1500)}
 function changeAddr(){const a=Number($('newAddr').value);if(!(a>0&&a<16384))return toast('Adresse 1-16383');
- cmd({c:'cv',addr:cur.addr,cv:1,value:a&255});setTimeout(()=>cmd({c:'cv',addr:cur.addr,cv:9,value:a>>8}),200);
+ mcv({cv:1,value:a&255});setTimeout(()=>mcv({cv:9,value:a>>8}),200);
  toast('Neue Adresse '+a);setTimeout(discover,1000)}
 function saveSettings(){$('sMsg').textContent='';
  cmd({c:'set',key:1,value:Number($('s1').value)});cmd({c:'set',key:2,value:Number($('s2').value)});
@@ -290,6 +344,49 @@ async function refreshDrive(){if(!listsLoaded){listsLoaded=true;await loadLists(
  if(!online())return;
  if(loco.addr)cmd({c:'x',d:[0xE3,0xF0,amsb(loco.addr),loco.addr&255]});
  lists.items.forEach((it,i)=>setTimeout(()=>askTurnout(it.addr),i*60))}
+//---- programming page: one CV operation at a time, the station answers each with result or NACK
+const PCV={1:'Kurze Adresse (1-127)',2:'Anfahrspannung',3:'Beschleunigung',4:'Bremsverzögerung',5:'Höchstgeschwindigkeit',
+ 6:'Mittlere Geschwindigkeit',7:'Version (nur lesen)',8:'Hersteller (nur lesen)',17:'Lange Adresse, hohes Byte',18:'Lange Adresse, niedriges Byte',29:'Konfiguration'};
+const MAKER={13:'Selbstbau',62:'Tams',85:'Uhlenbrock',97:'Doehler & Haass',99:'Lenz',145:'Zimo',151:'ESU',161:'Roco'};
+const PERR={nack:'Keine Antwort vom Decoder',short:'Kurzschluss auf dem Programmiergleis',timeout:'Zeitüberschreitung'};
+let progQ=[],progBusy=null;
+function progOp(write,cv,val){return new Promise(res=>{progQ.push({write,cv,val,res});progNext()})}
+function progNext(){if(progBusy||!progQ.length)return;if(!online()){progQ.forEach(o=>o.res({error:'offline'}));progQ=[];return}
+ const o=progBusy=progQ.shift(),c=o.cv-1;
+ $('pMsg').textContent=(o.write?'Schreibe CV '+o.cv+' = '+o.val:'Lese CV '+o.cv)+' ...';
+ cmd({c:'x',d:o.write?[0x24,0x12,(c>>8)&0x3F,c&255,o.val]:[0x23,0x11,(c>>8)&0x3F,c&255]});
+ o.timer=setTimeout(()=>progDone({error:'timeout'}),15000)}
+function progDone(m){const o=progBusy;if(!o)return;clearTimeout(o.timer);progBusy=null;
+ if(!m.error){const e=$('pv'+o.cv);if(e)e.value=m.value;const s=$('ps'+o.cv);if(s)s.textContent=o.write?'geschrieben':'gelesen';if(o.cv==29)show29(m.value);if(o.cv==8)show8(m.value)}
+ else{const s=$('ps'+o.cv);if(s)s.textContent='Fehler'}
+ $('pMsg').textContent=m.error?'CV '+o.cv+': '+(PERR[m.error]||m.error):'CV '+o.cv+' = '+m.value;o.res(m);progNext()}
+function show29(v){const t=[v&32?'lange Adresse':'kurze Adresse',v&2?'28/128 Fahrstufen':'14 Fahrstufen',v&4?'Analogbetrieb an':'Analogbetrieb aus'];
+ if(v&1)t.push('Fahrtrichtung umgekehrt');if(v&8)t.push('RailCom an');if(v&16)t.push('eigene Geschwindigkeitskennlinie');$('p29').textContent='CV29 = '+v+': '+t.join(', ')}
+function show8(v){const s=$('ps8');if(s)s.textContent=MAKER[v]||'Hersteller '+v}
+function renderProg(){const t=$('pCvs');if(t.children.length)return;
+ for(const cv of Object.keys(PCV).map(Number)){const ro=cv==7||cv==8;const tr=document.createElement('div');tr.className='item cv';
+  tr.innerHTML='<div class="n"><b>CV'+cv+'</b> '+PCV[cv]+'<div class="small muted" id="ps'+cv+'"></div></div><input id="pv'+cv+'" type="number" min="0" max="255"'+(ro?' disabled':'')+'><div class="btns"></div>';
+  const c=tr.lastChild;const r=document.createElement('button');r.className='b';r.textContent='Lesen';r.onclick=()=>progOp(false,cv);c.append(r);
+  if(!ro){const w=document.createElement('button');w.className='b';w.textContent='Schreiben';w.onclick=()=>progWrite(cv,$('pv'+cv).value);c.append(w)}
+  t.append(tr)}
+ if(loco.addr&&!$('mAddr').value)$('mAddr').value=loco.addr}
+function progWrite(cv,s){const v=Number(s);if(String(s).trim()===''||!(v>=0&&v<=255))return toast('Wert 0-255');return progOp(true,cv,v)}
+function readCommon(){for(const cv of Object.keys(PCV).map(Number))progOp(false,cv)}
+function progFree(w){const cv=Number($('pCv').value);if(!(cv>=1&&cv<=1024))return toast('CV 1-1024');
+ if(w)progWrite(cv,$('pVal').value);else progOp(false,cv).then(m=>{if(!m.error)$('pVal').value=m.value})}
+async function readAddr(){$('pAddr').textContent='...';const r29=await progOp(false,29);if(r29.error)return $('pAddr').textContent='-';
+ let a;if(r29.value&32){const h=await progOp(false,17);if(h.error)return $('pAddr').textContent='-';const l=await progOp(false,18);if(l.error)return $('pAddr').textContent='-';a=((h.value&0x3F)<<8)|l.value}
+ else{const r=await progOp(false,1);if(r.error)return $('pAddr').textContent='-';a=r.value}
+ $('pAddr').textContent=a;$('pMsg').textContent='Lokadresse '+a+(r29.value&32?' (lang)':' (kurz)')}
+async function writeAddr(){const a=Number($('pNewAddr').value);if(!(a>=1&&a<=9999))return toast('Adresse 1-9999');
+ const r29=await progOp(false,29);if(r29.error)return;let r;
+ if(a<128){r=await progOp(true,1,a);if(r.error)return;r=await progOp(true,29,r29.value&~32)}
+ else{r=await progOp(true,17,0xC0|(a>>8));if(r.error)return;r=await progOp(true,18,a&255);if(r.error)return;r=await progOp(true,29,r29.value|32)}
+ if(!r.error){$('pAddr').textContent=a;$('pMsg').textContent='Lokadresse '+a+' geschrieben'}}
+function factoryReset(){if(confirm('Decoder auf dem Programmiergleis auf Werkseinstellung zurücksetzen?'))progOp(true,8,8)}
+function pomWrite(){const a=Number($('mAddr').value),cv=Number($('mCv').value),v=Number($('mVal').value);
+ if(!(a>=1&&a<=9999))return toast('Lokadresse 1-9999');if(!(cv>=1&&cv<=1024))return toast('CV 1-1024');if($('mVal').value===''||!(v>=0&&v<=255))return toast('Wert 0-255');
+ const c=cv-1;cmd({c:'x',d:[0xE6,0x30,amsb(a),a&255,0xEC|((c>>8)&3),c&255,v]});$('mMsgPom').textContent='Lok '+a+': CV '+cv+' = '+v+' gesendet'}
 $('qAddr').oninput=()=>{const a=Number($('qAddr').value);renderStates();if(a>0&&a<16384&&tstate[a]===undefined)askTurnout(a)};
 async function loadNet(){const r=await fetch('/api/config');const j=await r.json();const a=j.active;
  $('nMode').value=a.mode;$('nSsid').value=a.ssid;$('nDhcp').checked=a.dhcp;$('nIp').value=a.ip;$('nSubnet').value=a.subnet;$('nGw').value=a.gateway;$('nApSsid').value=a.apSsid;

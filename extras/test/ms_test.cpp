@@ -27,7 +27,8 @@ uint8_t DCC::getSpeedSteps(int){ return steps; } unsigned long DCC::getFns(int){
 void DCC::setFn(int, int, bool){}
 void DCC::readCV(int cv, void(*cb)(int16_t)){ cvCb = cb; dccLog.push_back("readCV " + std::to_string(cv)); }
 void DCC::writeCVByte(int cv, uint8_t v, void(*cb)(int16_t)){ cvCb = cb; dccLog.push_back("writeCV " + std::to_string(cv)); }
-void DCC::writeCVByteMain(int,int,uint8_t){} void DCC::writeCVBitMain(int,int,uint8_t,bool){}
+void DCC::writeCVByteMain(int a,int cv,uint8_t v){ dccLog.push_back("pom " + std::to_string(a) + " " + std::to_string(cv) + " " + std::to_string(v)); }
+void DCC::writeCVBitMain(int a,int cv,uint8_t b,bool v){ dccLog.push_back("pombit " + std::to_string(a) + " " + std::to_string(cv) + " " + std::to_string(b) + " " + std::to_string(v)); }
 // --- fake interface ---
 struct Sent { IPAddress ip; uint16_t port; std::vector<uint8_t> d; };
 struct FakeIf : Eth_Interface {
@@ -173,6 +174,17 @@ int main(){
   CHECK(cvr, "cv result to Z21");
   notifyXNetDirectReadCV(28);
   CHECK(dccLog.size() == 2 && dccLog[1] == "readCV 29", "xnet read starts when free");
+
+  // 7b) POM of a loco: Z21 and XpressNet count the CV from 0, the library from 1
+  dccLog.clear();
+  eth.rx.push_back(pkt(B, 21105, x({0xE6, 0x30, 0xC0 | (1234 >> 8), 1234 & 0xFF, 0xEC, 3, 25}))); MobaStation::loop();
+  CHECK(dccLog.size() == 1 && dccLog[0] == "pom 1234 4 25", "Z21 POM byte CV4 (%s)", dccLog.empty() ? "-" : dccLog[0].c_str());
+  dccLog.clear();
+  eth.rx.push_back(pkt(B, 21105, x({0xE6, 0x30, 0, 3, 0xE8, 28, 0x08 | 5}))); MobaStation::loop();
+  CHECK(dccLog.size() == 1 && dccLog[0] == "pombit 3 29 5 1", "Z21 POM bit CV29 (%s)", dccLog.empty() ? "-" : dccLog[0].c_str());
+  dccLog.clear();
+  notifyXNetPOMwriteByte(3, 2, 7);
+  CHECK(dccLog.size() == 1 && dccLog[0] == "pom 3 3 7", "XpressNet POM byte CV3 (%s)", dccLog.empty() ? "-" : dccLog[0].c_str());
 
   // 8) truncated / corrupt record: nothing happens, no stale bytes
   eth.sent.clear(); dccLog.clear();

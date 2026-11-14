@@ -212,7 +212,8 @@ enum TurnoutMode{
  */
 class MobaStation_Management{
 public:
-    virtual void cvResult(uint16_t address, uint16_t cv, uint8_t value, uint8_t status) = 0;
+    //type ACCESSORIE or FEEDBACK
+    virtual void cvResult(uint8_t type, uint16_t address, uint16_t cv, uint8_t value, uint8_t status) = 0;
     virtual void moduleFound(uint8_t type, uint16_t address, uint8_t typeId, uint8_t channels, uint8_t slot, uint8_t version) = 0;
 };
 
@@ -409,9 +410,10 @@ public:
     static bool setSetting(uint8_t key, int32_t value);
     static void resetSettings();
 
-    //CV of a MobaBus module, the answer comes to the management with cvResult()
-    //@return false if the address is not a MobaBus turnout
-    static bool requestCv(uint16_t address, uint16_t cv, bool write, uint8_t value);
+    //CV of a MobaBus module (type ACCESSORIE or FEEDBACK), the answer comes to the
+    //management with cvResult()
+    //@return false if the address is not a MobaBus turnout or feedback module
+    static bool requestCv(uint8_t type, uint16_t address, uint16_t cv, bool write, uint8_t value);
     //all MobaBus modules answer to the management with moduleFound()
     static void discoverModules();
     //emergency stop of all locos, the track power stays on

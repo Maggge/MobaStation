@@ -29,7 +29,7 @@
 #include "NetConfig.h"
 #include "WebPage.h"
 
-#define FIRMWARE_VERSION "1.1.0"
+#define FIRMWARE_VERSION "1.3.0"
 #define MAX_MODULES_LIST 32
 //the Z21 data of one datagram, longer packets are cut (the Mega handles 64 bytes)
 #define UDP_MAX 64
@@ -180,8 +180,9 @@ void webZ21Send(const uint8_t *p, uint8_t n){
 }
 
 void webSubscribe(){
-    //LAN_SET_BROADCASTFLAGS 0x00000001: driving and switching info, keeps the client alive
-    const uint8_t p[8] = {8, 0, 0x50, 0, 0x01, 0, 0, 0};
+    //LAN_SET_BROADCASTFLAGS 0x00000003: driving and switching info, feedback (R-Bus),
+    //keeps the client alive
+    const uint8_t p[8] = {8, 0, 0x50, 0, 0x03, 0, 0, 0};
     webZ21Send(p, 8);
     lastWebSubscribe = millis();
     webSubscribed = true;
@@ -237,6 +238,30 @@ void handleWebZ21(const uint8_t *p, uint8_t n){
                 j["state"] = x[3] & 0x03;
                 wsSend(j);
             }
+            else if(x[0] == 0x64 && x[1] == 0x14 && xn >= 5){
+                //LAN_X_CV_RESULT of the programming track, the CV counts from 0
+                JsonDocument j;
+                j["t"] = "prog";
+                j["cv"] = (((x[2] & 0x3F) << 8) | x[3]) + 1;
+                j["value"] = x[4];
+                wsSend(j);
+            }
+            else if(x[0] == 0x61 && (x[1] == 0x12 || x[1] == 0x13) && xn >= 2){
+                //LAN_X_CV_NACK_SC (short circuit) or LAN_X_CV_NACK (no answer of the decoder)
+                JsonDocument j;
+                j["t"] = "prog";
+                j["error"] = x[1] == 0x12 ? "short" : "nack";
+                wsSend(j);
+            }
+        }
+        else if(p[2] == 0x80 && p[3] == 0 && len >= 15){
+            //LAN_RMBUS_DATACHANGED: group, 10 feedback modules with 8 inputs each
+            JsonDocument j;
+            j["t"] = "rbus";
+            j["group"] = p[4];
+            JsonArray a = j["data"].to<JsonArray>();
+            for(uint8_t i = 0; i < 10; i++) a.add(p[5 + i]);
+            wsSend(j);
         }
         p += len;
         n -= len;
@@ -328,7 +353,9 @@ void handleFrame(){
             if(len >= 6){
                 JsonDocument j;
                 j["t"] = "cv";
-                j["addr"] = espLinkGet16(d);
+                uint16_t a = espLinkGet16(d);
+                j["addr"] = a & ~ESPLINK_CV_FEEDBACK;
+                if(a & ESPLINK_CV_FEEDBACK) j["fb"] = true;
                 j["cv"] = espLinkGet16(d + 2);
                 j["value"] = d[4];
                 j["status"] = d[5];
@@ -525,13 +552,19 @@ void wsCommand(JsonVariantConst j){
         moduleCount = 0;
         sendFrame(ESPLINK_DISCOVER, NULL, 0);
     }
+    else if(!strcmp(c, "rbus")){
+        //LAN_RMBUS_GETDATA of a group, the answer comes as "rbus"
+        const uint8_t p[5] = {5, 0, 0x81, 0, (uint8_t)j["group"].as<int>()};
+        webZ21Send(p, 5);
+    }
     else if(!strcmp(c, "x")){
-        //Z21 X command of the control page (loco, function, loco and turnout info)
+        //Z21 X command of the control and programming pages (loco, function, info, CVs)
         webZ21X(j["d"].as<JsonArrayConst>());
     }
     else if(!strcmp(c, "cv")){
         uint8_t d[5];
-        espLinkPut16(d, j["addr"].as<int>());
+        //fb: feedback module, it has its own addresses
+        espLinkPut16(d, (j["addr"].as<int>() & 0x3FFF) | (j["fb"].as<bool>() ? ESPLINK_CV_FEEDBACK : 0));
         espLinkPut16(d + 2, j["cv"].as<int>());
         if(j["value"].is<int>()){
             d[4] = j["value"].as<int>();

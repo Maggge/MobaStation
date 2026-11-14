@@ -74,7 +74,7 @@ public:
     bool linkUp();
     uint16_t linkErrors();
 
-    void cvResult(uint16_t address, uint16_t cv, uint8_t value, uint8_t status) override;
+    void cvResult(uint8_t type, uint16_t address, uint16_t cv, uint8_t value, uint8_t status) override;
     void moduleFound(uint8_t type, uint16_t address, uint8_t typeId, uint8_t channels, uint8_t slot, uint8_t version) override;
 };
 

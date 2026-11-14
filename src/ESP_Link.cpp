@@ -197,11 +197,13 @@ bool ESP_Link::handleFrame(UdpPacket *pkg){
         case ESPLINK_CV_WRITE:{
             if(len < 4) return false;
             uint16_t addr = espLinkGet16(d);
+            uint8_t type = addr & ESPLINK_CV_FEEDBACK ? FEEDBACK : ACCESSORIE;
+            addr &= ~ESPLINK_CV_FEEDBACK;
             uint16_t cv = espLinkGet16(d + 2);
             bool write = rx.type == ESPLINK_CV_WRITE;
             uint8_t value = write && len >= 5 ? d[4] : 0;
-            if(!MobaStation::requestCv(addr, cv, write, value)){
-                cvResult(addr, cv, value, 254);     //no MobaBus turnout
+            if(!MobaStation::requestCv(type, addr, cv, write, value)){
+                cvResult(type, addr, cv, value, 254);     //no MobaBus module
             }
             return false;
         }
@@ -227,9 +229,9 @@ bool ESP_Link::handleFrame(UdpPacket *pkg){
     return false;
 }
 
-void ESP_Link::cvResult(uint16_t address, uint16_t cv, uint8_t value, uint8_t status){
+void ESP_Link::cvResult(uint8_t type, uint16_t address, uint16_t cv, uint8_t value, uint8_t status){
     uint8_t d[6];
-    espLinkPut16(d, address);
+    espLinkPut16(d, address | (type == FEEDBACK ? ESPLINK_CV_FEEDBACK : 0));
     espLinkPut16(d + 2, cv);
     d[4] = value;
     d[5] = status;

@@ -55,11 +55,14 @@ make upload SKETCH=examples/MobaStationEth PORT=/dev/ttyUSB1
 
 All settings (WiFi, IP or DHCP, motor shield, MobaBus, XpressNet) are in MobaStationConfig.h, the sketches need no changes.
 MobaBus modules only get turnout commands above `DCC_TURNOUT_ADDRESS_RANGE` (default 2047 = all turnouts are DCC),
-set it eg. to 1000 for DCC decoders 1-1000 and MobaBus from 1001.
+set it eg. to 1000 for DCC decoders 1-1000 and MobaBus from 1001. With the ESP firmware the turnout mode
+(MobaBus only, DCC only, combined) and the range are changed on the page "Zentrale" of the web interface and kept in
+the EEPROM of the Mega.
 
 MobaBus modules are configured with "POM accessory" (CV programming on the main for accessory decoders), eg.
 `python3 extras/z21test.py 192.168.30.111 cv 1020 33 50` sets CV33 of the module at address 1020 and reads it back.
-The CVs are described in the README of MobaBus.
+The web interface does the same with a form per module. The CVs are described in the README of MobaBus,
+`examples/nano_module` of MobaBus is a complete module (servo turnout, house, fire, light, 8 sensors) on an Arduino Nano.
 
 `examples/MobaStationEffects` runs MobaBus light effects (house with TV, candle, level crossing) on free pins of the Mega,
 without CAN bus. `make upload EXTRA_FLAGS=-DMOBASTATION_LOOP_STATS` prints the loop time every 10 seconds.
@@ -72,10 +75,22 @@ Instead of the AT firmware the ESP8266 of a Mega + WiFi R3 board can run its own
 interface, the Mega exchanges Z21 packets with it in short frames over Serial3 instead of AT commands. This saves
 about 2 KB of RAM on the Mega and the AT handshake for every packet.
 
-The web interface (address of MobaStation in the browser) shows the track state, currents and voltage, switches
-the track power and turnouts, changes the settings of the command station, finds MobaBus modules and reads and writes
-their CVs, configures the WiFi and updates the ESP firmware. WiFi settings saved there win over MobaStationConfig.h,
-without router the ESP opens its own access point (`WIFI_AP_SSID`, captive portal).
+The web interface (address of MobaStation in the browser, German, works on the phone) has these pages:
+
+| Page | What it does |
+|---|---|
+| Status | track state, track power and emergency stop, currents, voltage, Z21 clients, loop time and free RAM of the Mega |
+| Steuern | drive a loco (speed, direction, functions), a list of saved locos, turnouts and accessories to switch |
+| Programmieren | read and write the address and CVs of a loco decoder on the programming track, write CVs on the main (POM) |
+| Zentrale | turnout mode and DCC range, voltage factor, track power at start |
+| MobaBus | finds all modules on the bus, shows their state (turnout or light on/off, the 8 inputs of a feedback module live) and edits their CVs with names, eg. servo angles, light times, brightness, inverted inputs and outputs, "back to the sketch values" (CV8 = 8) |
+| Netzwerk | WiFi, IP or DHCP |
+| System | firmware version, ESP update over the browser, restart, log |
+
+WiFi settings saved there win over MobaStationConfig.h, without router the ESP opens its own access point
+(`WIFI_AP_SSID`, captive portal). The web interface talks to the Mega like a Z21 app, so it works next to the
+Z21 app, Rocrail and a multiMAUS. CVs of feedback modules (R-Bus) go through the same frames with a flag in the
+address, the Z21 protocol has no command for them.
 
 ```
 make esp-setup                 # once: ESP8266 core and libraries
@@ -96,7 +111,7 @@ so building it yourself is only needed if you want to modify something.
 
   1) Build the MobaStation:</br>
       1)For Network connectivity are different possibilities:
-        - <a href="https://www.makershop.de/plattformen/arduino/mega2560-wifi-r3"/>Arduino Mega with integrated Wifi-Module </a>(the ESP needs to  be flashed with the AT 1.7 firmware)
+        - <a href="https://www.makershop.de/plattformen/arduino/mega2560-wifi-r3"/>Arduino Mega with integrated Wifi-Module </a>(the ESP needs to  be flashed with the AT 1.7 firmware, or with the MobaStation ESP firmware including the web interface, see above)
         - Arduino Mega with ESP-01 connected to Serial3 (the ESP needs to  be flashed with the AT 1.7 firmware)
         - Arduino Mega with Ethernet Modul
         - Arduino Mega with Ethernet and Wifi (the ESP needs to  be flashed with the AT 1.7 firmware)
