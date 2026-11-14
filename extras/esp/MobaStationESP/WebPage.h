@@ -41,13 +41,21 @@ table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:8px 6px;
 th{color:var(--muted);font-weight:500;font-size:13px}
 .cv input{width:80px}.muted{color:var(--muted)}.small{font-size:13px}
 #log{font:12px/1.5 ui-monospace,monospace;max-height:240px;overflow:auto;white-space:pre-wrap}
+.drive{display:flex;align-items:baseline;gap:12px;margin:8px 0}.drive .v{font-size:40px}
+input[type=range]{max-width:none;padding:0;height:44px;accent-color:var(--accent)}
+.fns{display:grid;grid-template-columns:repeat(auto-fill,minmax(58px,1fr));gap:6px;margin-top:12px}
+.fns button{padding:10px 0}button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+button.big{flex:1;min-width:80px;padding:12px;white-space:nowrap}
+.st{display:inline-block;min-width:64px;font-size:13px}.st.s0{color:var(--bad)}.st.s1{color:var(--ok)}
+.item{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.item .n{flex:1 1 150px}.item .btns{display:flex;gap:6px;margin-left:auto}
 #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:8px;display:none}
 </style>
 </head>
 <body>
 <header><span class="dot" id="linkDot"></span><h1>MobaStation</h1><span class="small muted" id="netInfo"></span></header>
 <nav id="nav">
-<button data-s="status" class="on">Status</button><button data-s="station">Zentrale</button>
+<button data-s="status" class="on">Status</button><button data-s="drive">Steuern</button><button data-s="station">Zentrale</button>
 <button data-s="mobabus">MobaBus</button><button data-s="network">Netzwerk</button><button data-s="system">System</button>
 </nav>
 <main>
@@ -79,11 +87,32 @@ th{color:var(--muted);font-weight:500;font-size:13px}
 <label>Spannungsfaktor (Messwert &times; Faktor = mV)</label><input id="s3" type="number" step="0.001" min="0.001">
 <label><input id="s4" type="checkbox"> Gleisspannung nach dem Start einschalten</label>
 <div class="row"><button class="b p" onclick="saveSettings()">Speichern</button>
-<button class="b" onclick="cmd({c:'resetSettings'});toast('Gilt nach dem n�chsten Neustart der Zentrale')">Auf Werte der Config zur�cksetzen</button>
+<button class="b" onclick="cmd({c:'resetSettings'});toast('Gilt nach dem nächsten Neustart der Zentrale')">Auf Werte der Config zurücksetzen</button>
 <span class="small muted" id="sMsg"></span></div></div>
-<div class="card"><h2>Weiche schalten</h2>
-<div class="row"><input id="tAddr" type="number" min="1" max="2048" placeholder="Adresse" style="max-width:140px">
-<button class="b" onclick="turnout(0)">Gerade / Aus</button><button class="b" onclick="turnout(1)">Abzweig / An</button></div></div>
+</section>
+
+<section id="drive">
+<div class="card"><h2>Lok</h2>
+<div class="row"><select id="locoSel" style="max-width:220px" onchange="if(this.value)selectLoco(Number(this.value))"></select>
+<input id="locoAddr" type="number" min="1" max="9999" placeholder="Adresse" style="max-width:110px">
+<button class="b" onclick="selectLoco(Number($('locoAddr').value))">Wählen</button>
+<button class="b" onclick="saveLoco()">Merken</button><button class="b" onclick="forgetLoco()">Entfernen</button></div>
+<div id="locoPanel" style="display:none">
+<div class="drive"><span class="v" id="spd">0</span><span class="muted" id="spdInfo"></span><span style="flex:1"></span><span class="v" id="dirShow"></span></div>
+<input id="throttle" type="range" min="0" max="126" value="0">
+<div class="row"><button class="b big" onclick="setDir(0)">&#9664; Zurück</button><button class="b big" onclick="stopLoco()">Halt</button>
+<button class="b big" onclick="setDir(1)">Vor &#9654;</button><button class="b d big" onclick="estopLoco()">Nothalt Lok</button></div>
+<div class="fns" id="fns"></div></div></div>
+<div class="card"><h2>Weichen und Zubehör</h2>
+<div id="items"></div>
+<p class="small muted" id="itemsEmpty">Noch keine Einträge. Weichen und Zubehör hier unten hinzufügen.</p>
+<label>Hinzufügen</label><div class="row"><input id="iName" placeholder="Name" style="max-width:180px">
+<input id="iAddr" type="number" min="1" max="16383" placeholder="Adresse" style="max-width:110px">
+<select id="iKind" style="max-width:150px"><option value="t">Weiche</option><option value="s">Zubehör (An/Aus)</option></select>
+<button class="b" onclick="addItem()">Hinzufügen</button></div>
+<label>Direkt schalten</label><div class="row"><input id="qAddr" type="number" min="1" max="16383" placeholder="Adresse" style="max-width:110px">
+<button class="b" onclick="quick(0)">0 / Abzweig / Aus</button><button class="b" onclick="quick(1)">1 / Gerade / An</button>
+<span class="st" id="qState"></span></div></div>
 </section>
 
 <section id="mobabus">
@@ -137,14 +166,16 @@ const STATUS={0:'',1:'unbekannte CV',2:'nur lesbar',3:'ungültiger Wert',254:'ke
 let ws,mods={},cur=null,pending={};
 function toast(t){const e=$('toast');e.textContent=t;e.style.display='block';clearTimeout(e._t);e._t=setTimeout(()=>e.style.display='none',3000)}
 function log(t){const l=$('log');l.textContent+=new Date().toLocaleTimeString()+'  '+t+'\n';l.scrollTop=l.scrollHeight}
-function cmd(o){if(ws&&ws.readyState==1)ws.send(JSON.stringify(o));else toast('Keine Verbindung')}
+const online=()=>ws&&ws.readyState==1;
+function cmd(o){if(online())ws.send(JSON.stringify(o));else toast('Keine Verbindung')}
 document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>{
+ history.replaceState(null,'','#/'+b.dataset.s);
  document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on',x==b));
  document.querySelectorAll('section').forEach(s=>s.classList.toggle('on',s.id==b.dataset.s));
- if(b.dataset.s=='station')cmd({c:'settings'});if(b.dataset.s=='network')loadNet()});
+ if(b.dataset.s=='station')cmd({c:'settings'});if(b.dataset.s=='network')loadNet();if(b.dataset.s=='drive')refreshDrive()});
 function connect(){
  ws=new WebSocket('ws://'+location.host+'/ws');
- ws.onopen=()=>{log('Verbunden');cmd({c:'settings'})};
+ ws.onopen=()=>{log('Verbunden');cmd({c:'settings'});refreshDrive()};
  ws.onclose=()=>{$('linkDot').className='dot bad';setTimeout(connect,2000)};
  ws.onmessage=e=>{const m=JSON.parse(e.data);(H[m.t]||(()=>{}))(m)}}
 const fmtUp=s=>{const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return h+' h '+m+' min'};
@@ -164,6 +195,9 @@ const H={
  cv:m=>{const id='cv'+m.cv;if(cur&&m.addr==cur.addr){const e=$(id);const s=$(id+'s');
    if(m.status==0&&e&&m.cv!=1&&m.cv!=9&&m.cv!=8)e.value=m.value;if(s)s.textContent=STATUS[m.status]||('Status '+m.status)}
   delete pending[m.addr+':'+m.cv]},
+ loco:m=>{if(m.addr!=loco.addr)return;loco.steps=m.steps;loco.fn=m.fn;const s=decodeSpeed(m.steps,m.speed);loco.dir=s[1];
+  if(Date.now()-userT>800){loco.speed=s[0];$('throttle').value=s[0]}renderLoco()},
+ turnout:m=>{tstate[m.addr]=m.state;renderStates()},
  log:m=>log(m.text)};
 function renderMods(){const t=$('mods');t.innerHTML='';const l=Object.values(mods).sort((a,b)=>a.addr-b.addr);
  $('mMsg').textContent=l.length+' Module';
@@ -191,7 +225,72 @@ function changeAddr(){const a=Number($('newAddr').value);if(!(a>0&&a<16384))retu
 function saveSettings(){$('sMsg').textContent='';
  cmd({c:'set',key:1,value:Number($('s1').value)});cmd({c:'set',key:2,value:Number($('s2').value)});
  cmd({c:'set',key:3,value:Math.round(Number($('s3').value)*1000)});cmd({c:'set',key:4,value:$('s4').checked?1:0});toast('Gespeichert')}
-function turnout(d){const a=Number($('tAddr').value);if(a>0)cmd({c:'turnout',addr:a,dir:d})}
+//---- control page: the ESP passes the X bytes as Z21 client 127.0.0.1 to the station
+const STEPS={0:14,2:28,4:126};
+let loco={addr:0,steps:4,speed:0,dir:1,fn:0},userT=0,sendT=0,sendTimer=null,lists={locos:[],items:[]},tstate={};
+const amsb=a=>((a>>8)&0x3F)|(a>=128?0xC0:0);
+const store=(k,v)=>{try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v)}catch(e){}};
+function decodeSpeed(st,v){const dir=v>>7&1;let s;
+ if(st==0){s=v&15;s=s<=1?0:s-1}else if(st==2){s=((v&15)<<1)|((v>>4)&1);s=s<=3?0:s-3}else{s=v&127;s=s<=1?0:s-1}
+ return [s,dir]}
+function encodeSpeed(st,s,dir,estop){let v;
+ if(estop)v=1;else if(!s)v=0;else if(st==2){const t=s+3;v=(t>>1)|((t&1)<<4)}else v=s+1;
+ return v|(dir?0x80:0)}
+function sendDrive(estop){const a=loco.addr;if(!a)return;
+ cmd({c:'x',d:[0xE4,0x10|(loco.steps==4?3:loco.steps),amsb(a),a&255,encodeSpeed(loco.steps,loco.speed,loco.dir,estop)]})}
+function drive(){const now=Date.now();clearTimeout(sendTimer);
+ if(now-sendT>=150){sendT=now;sendDrive()}else sendTimer=setTimeout(drive,150-(now-sendT))}
+function selectLoco(a,quiet){if(!(a>0&&a<10000))return toast('Lokadresse 1-9999');loco={addr:a,steps:4,speed:0,dir:1,fn:0};
+ store('loco',a);$('locoAddr').value=a;$('locoSel').value=lists.locos.some(l=>l.addr==a)?a:'';$('throttle').value=0;
+ $('locoPanel').style.display='block';renderLoco();if(!quiet)cmd({c:'x',d:[0xE3,0xF0,amsb(a),a&255]})}
+function renderLoco(){const max=STEPS[loco.steps]||126,t=$('throttle');t.max=max;
+ $('spd').textContent=loco.speed;$('spdInfo').textContent='von '+max+' Fahrstufen';$('dirShow').textContent=loco.dir?'▶':'◀';
+ const f=$('fns');if(!f.children.length)for(let i=0;i<=28;i++){const b=document.createElement('button');b.className='b';b.textContent='F'+i;
+  b.onclick=()=>{const on=!(loco.fn>>>i&1);cmd({c:'x',d:[0xE4,0xF8,amsb(loco.addr),loco.addr&255,(on?0x40:0)|i]})};f.append(b)}
+ [...f.children].forEach((b,i)=>b.classList.toggle('on',!!(loco.fn>>>i&1)))}
+$('throttle').oninput=e=>{userT=Date.now();loco.speed=Number(e.target.value);$('spd').textContent=loco.speed;drive()};
+function setDir(d){if(d==loco.dir)return;userT=Date.now();loco.dir=d;loco.speed=0;$('throttle').value=0;renderLoco();sendDrive()}
+function stopLoco(){userT=Date.now();loco.speed=0;$('throttle').value=0;renderLoco();sendDrive()}
+function estopLoco(){userT=Date.now();loco.speed=0;$('throttle').value=0;renderLoco();sendDrive(true)}
+async function loadLists(){try{const r=await fetch('/api/items');lists=await r.json()}catch(e){}
+ lists.locos=lists.locos||[];lists.items=lists.items||[];renderLists()}
+async function saveLists(){const r=await fetch('/api/items',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(lists)});
+ if(!r.ok)toast(await r.text())}
+function renderLists(){const s=$('locoSel');s.innerHTML='';const o0=document.createElement('option');o0.value='';o0.textContent='Lok wählen';s.append(o0);
+ for(const l of lists.locos){const o=document.createElement('option');o.value=l.addr;o.textContent=l.name+' ('+l.addr+')';s.append(o)}
+ if(loco.addr)s.value=lists.locos.some(l=>l.addr==loco.addr)?loco.addr:'';
+ const t=$('items');t.innerHTML='';$('itemsEmpty').style.display=lists.items.length?'none':'block';
+ lists.items.forEach((it,k)=>{const tr=document.createElement('div');tr.className='item';
+  const n=document.createElement('div');n.className='n';n.textContent=it.name+' ';
+  const a=document.createElement('span');a.className='muted small';a.textContent=it.addr;n.append(a);
+  const st=document.createElement('span');st.className='st';st.dataset.a=it.addr;st.dataset.k=it.kind;
+  const c=document.createElement('div');c.className='btns';const lb=it.kind=='t'?['Abzweig','Gerade']:['Aus','An'];
+  lb.forEach((l,d)=>{const b=document.createElement('button');b.className='b';b.textContent=l;b.onclick=()=>switchItem(it.addr,d);c.append(b)});
+  const x=document.createElement('button');x.className='b';x.textContent='✕';x.title='Entfernen';
+  x.onclick=()=>{if(confirm(it.name+' entfernen?')){lists.items.splice(k,1);saveLists();renderLists()}};c.append(x);
+  tr.append(n,st,c);t.append(tr)});renderStates()}
+function stateText(s,k){if(s==1)return k=='t'?'Abzweig':'Aus';if(s==2)return k=='t'?'Gerade':'An';return '?'}
+function renderStates(){document.querySelectorAll('#items .st').forEach(e=>{const s=tstate[e.dataset.a];e.textContent=stateText(s,e.dataset.k);e.className='st'+(s==1?' s0':s==2?' s1':'')});
+ const q=Number($('qAddr').value);const qs=$('qState');qs.textContent=q>0&&tstate[q]?'Stellung '+(tstate[q]-1):'';}
+function askTurnout(a){cmd({c:'x',d:[0x43,((a-1)>>8)&0x3F,(a-1)&255]})}
+function switchItem(a,d){cmd({c:'turnout',addr:a,dir:d})}
+function quick(d){const a=Number($('qAddr').value);if(!(a>0&&a<16384))return toast('Adresse 1-16383');switchItem(a,d)}
+function addItem(){const name=$('iName').value.trim(),addr=Number($('iAddr').value),kind=$('iKind').value;
+ if(!name)return toast('Name fehlt');if(!(addr>0&&addr<16384))return toast('Adresse 1-16383');
+ lists.items.push({name,addr,kind});lists.items.sort((a,b)=>a.addr-b.addr);saveLists();renderLists();askTurnout(addr);$('iName').value='';$('iAddr').value=''}
+function saveLoco(){const a=Number($('locoAddr').value);if(!(a>0&&a<10000))return toast('Lokadresse 1-9999');
+ const name=prompt('Name der Lok',(lists.locos.find(l=>l.addr==a)||{}).name||'Lok '+a);if(!name)return;
+ lists.locos=lists.locos.filter(l=>l.addr!=a);lists.locos.push({addr:a,name});lists.locos.sort((x,y)=>x.name.localeCompare(y.name));
+ saveLists();renderLists();if(loco.addr!=a)selectLoco(a)}
+function forgetLoco(){const a=loco.addr||Number($('locoAddr').value);if(!lists.locos.some(l=>l.addr==a))return toast('Lok ist nicht gemerkt');
+ lists.locos=lists.locos.filter(l=>l.addr!=a);saveLists();renderLists()}
+let listsLoaded=false;
+//lists at once, the states of the loco and the turnouts once the connection is there
+async function refreshDrive(){if(!listsLoaded){listsLoaded=true;await loadLists();const a=Number(store('loco'));if(a>0&&!loco.addr)selectLoco(a,true)}
+ if(!online())return;
+ if(loco.addr)cmd({c:'x',d:[0xE3,0xF0,amsb(loco.addr),loco.addr&255]});
+ lists.items.forEach((it,i)=>setTimeout(()=>askTurnout(it.addr),i*60))}
+$('qAddr').oninput=()=>{const a=Number($('qAddr').value);renderStates();if(a>0&&a<16384&&tstate[a]===undefined)askTurnout(a)};
 async function loadNet(){const r=await fetch('/api/config');const j=await r.json();const a=j.active;
  $('nMode').value=a.mode;$('nSsid').value=a.ssid;$('nDhcp').checked=a.dhcp;$('nIp').value=a.ip;$('nSubnet').value=a.subnet;$('nGw').value=a.gateway;$('nApSsid').value=a.apSsid;
  $('nSource').textContent=a.saved?'Diese Einstellungen wurden hier gespeichert und gelten statt MobaStationConfig.h.':'Aktiv sind die Einstellungen aus MobaStationConfig.h der Zentrale.'}
@@ -204,6 +303,8 @@ function upload(){const f=$('fwFile').files[0];if(!f)return toast('Datei wählen
  const x=new XMLHttpRequest();x.upload.onprogress=e=>$('fwMsg').textContent='Übertrage '+Math.round(e.loaded*100/e.total)+' %';
  x.onload=()=>$('fwMsg').textContent=x.responseText;x.onerror=()=>$('fwMsg').textContent='Fehler';x.open('POST','/update');x.send(fd)}
 connect();
+//the tab in the address (eg. /#/drive) opens directly, for a bookmark on the phone
+{const b=document.querySelector('#nav button[data-s="'+location.hash.slice(2).replace(/[^a-z]/g,'')+'"]');if(b)b.click()}
 </script>
 </body>
 </html>

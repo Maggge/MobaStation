@@ -29,7 +29,7 @@
 #include "NetConfig.h"
 #include "WebPage.h"
 
-#define FIRMWARE_VERSION "1.0.0"
+#define FIRMWARE_VERSION "1.1.0"
 #define MAX_MODULES_LIST 32
 //the Z21 data of one datagram, longer packets are cut (the Mega handles 64 bytes)
 #define UDP_MAX 64
@@ -62,6 +62,18 @@ uint32_t staLostSince = 0;
 uint32_t staUpSince = 0;
 uint32_t restartAt = 0;
 uint16_t udpPort = 0;
+
+//the web pages drive locos and turnouts as one Z21 client with this pseudo address: its packets
+//go to the Mega like UDP packets, the answers are taken out of UDP_TX instead of being sent
+const uint8_t WEB_CLIENT_IP[4] = {127, 0, 0, 1};
+#define WEB_CLIENT_PORT 1
+//the Mega forgets a client after 40 s without packets
+#define WEB_CLIENT_KEEPALIVE 20000
+uint32_t lastWebSubscribe = 0;
+bool webSubscribed = false;
+
+#define ITEMS_FILE "/items.json"
+#define ITEMS_MAX_SIZE 4096
 
 //---------------------------------------------------------------- link to the Mega
 
@@ -156,6 +168,92 @@ void pushModule(const ModuleInfo &m){
     wsSend(d);
 }
 
+//---------------------------------------------------------------- Z21 client of the web pages
+
+void webZ21Send(const uint8_t *p, uint8_t n){
+    if(n > UDP_MAX) return;
+    uint8_t d[6 + UDP_MAX];
+    memcpy(d, WEB_CLIENT_IP, 4);
+    espLinkPut16(d + 4, WEB_CLIENT_PORT);
+    memcpy(d + 6, p, n);
+    sendFrame(ESPLINK_UDP_RX, d, 6 + n);
+}
+
+void webSubscribe(){
+    //LAN_SET_BROADCASTFLAGS 0x00000001: driving and switching info, keeps the client alive
+    const uint8_t p[8] = {8, 0, 0x50, 0, 0x01, 0, 0, 0};
+    webZ21Send(p, 8);
+    lastWebSubscribe = millis();
+    webSubscribed = true;
+}
+
+//LAN_X packet from the X bytes of a page: header 0x40 and XOR are added here
+void webZ21X(JsonArrayConst x){
+    uint8_t n = x.size();
+    if(n == 0 || n > 16) return;
+    if(!webSubscribed) webSubscribe();
+    uint8_t p[16 + 5];
+    p[0] = n + 5;
+    p[1] = 0;
+    p[2] = 0x40;
+    p[3] = 0;
+    uint8_t xr = 0;
+    for(uint8_t i = 0; i < n; i++){
+        p[4 + i] = x[i].as<uint8_t>();
+        xr ^= p[4 + i];
+    }
+    p[4 + n] = xr;
+    webZ21Send(p, n + 5);
+}
+
+//answers of the Mega to the web client: loco and turnout info go to the pages as JSON
+void handleWebZ21(const uint8_t *p, uint8_t n){
+    while(n >= 4){
+        uint8_t len = p[0];
+        if(len < 4 || len > n || p[1] != 0) return;
+        if(p[2] == 0x40 && p[3] == 0 && len >= 6){
+            const uint8_t *x = p + 4;
+            uint8_t xn = len - 5;       //without the XOR byte
+            if(x[0] == 0xEF && xn >= 6){
+                //LAN_X_LOCO_INFO
+                JsonDocument j;
+                j["t"] = "loco";
+                j["addr"] = ((x[1] & 0x3F) << 8) | x[2];
+                j["steps"] = x[3] & 0x07;
+                j["busy"] = (x[3] & 0x08) != 0;
+                j["speed"] = x[4];
+                uint32_t fn = ((x[5] >> 4) & 0x01) | ((uint32_t)(x[5] & 0x0F) << 1);
+                if(xn >= 7) fn |= (uint32_t)x[6] << 5;
+                if(xn >= 8) fn |= (uint32_t)x[7] << 13;
+                if(xn >= 9) fn |= (uint32_t)x[8] << 21;
+                j["fn"] = fn;
+                wsSend(j);
+            }
+            else if(x[0] == 0x43 && xn >= 4){
+                //LAN_X_TURNOUT_INFO: 1 = output 0, 2 = output 1, 0 = unknown
+                JsonDocument j;
+                j["t"] = "turnout";
+                j["addr"] = (((x[1] & 0x3F) << 8) | x[2]) + 1;
+                j["state"] = x[3] & 0x03;
+                wsSend(j);
+            }
+        }
+        p += len;
+        n -= len;
+    }
+}
+
+void webZ21Loop(){
+    if(!webSubscribed) return;
+    if(ws.count() == 0){
+        webSubscribed = false;          //the Mega drops the client by itself
+        return;
+    }
+    if(millis() - lastWebSubscribe >= WEB_CLIENT_KEEPALIVE) webSubscribe();
+}
+
+//---------------------------------------------------------------- frames of the Mega
+
 void handleFrame(){
     const uint8_t *d = link.data();
     uint8_t len = link.len;
@@ -165,7 +263,11 @@ void handleFrame(){
             if(len >= 2 && d[1] == ESPLINK_ROLE_MEGA){
                 if(!megaSeen) wsLog(F("Zentrale verbunden"));
                 megaSeen = true;
-                if(len >= 3 && d[2]) sendHello(false);
+                if(len >= 3 && d[2]){
+                    sendHello(false);
+                    //the Mega restarted and lost its clients: subscribe again
+                    if(webSubscribed) webSubscribe();
+                }
             }
             break;
         case ESPLINK_HEARTBEAT:
@@ -195,7 +297,10 @@ void handleFrame(){
             break;
         }
         case ESPLINK_UDP_TX:
-            if(len >= 6 && udpPort){
+            if(len >= 6 && memcmp(d, WEB_CLIENT_IP, 4) == 0){
+                handleWebZ21(d + 6, len - 6);
+            }
+            else if(len >= 6 && udpPort){
                 udp.beginPacket(IPAddress(d[0], d[1], d[2], d[3]), espLinkGet16(d + 4));
                 udp.write(d + 6, len - 6);
                 udp.endPacket();
@@ -420,6 +525,10 @@ void wsCommand(JsonVariantConst j){
         moduleCount = 0;
         sendFrame(ESPLINK_DISCOVER, NULL, 0);
     }
+    else if(!strcmp(c, "x")){
+        //Z21 X command of the control page (loco, function, loco and turnout info)
+        webZ21X(j["d"].as<JsonArrayConst>());
+    }
     else if(!strcmp(c, "cv")){
         uint8_t d[5];
         espLinkPut16(d, j["addr"].as<int>());
@@ -440,6 +549,7 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
         sendNetStatus();
         pushStatus();
         for(uint8_t i = 0; i < moduleCount; i++) pushModule(modules[i]);
+        webSubscribe();
     }
     else if(type == WS_EVT_DATA){
         AwsFrameInfo *info = (AwsFrameInfo *)arg;
@@ -487,6 +597,30 @@ void setupWeb(){
             restartAt = millis() + 1000;
         });
     server.addHandler(save);
+
+    //locos, turnouts and accessories of the control page
+    server.on("/api/items", HTTP_GET, [](AsyncWebServerRequest *r){
+        if(LittleFS.exists(ITEMS_FILE)) r->send(LittleFS, ITEMS_FILE, "application/json");
+        else r->send(200, "application/json", "{\"locos\":[],\"items\":[]}");
+    });
+
+    AsyncCallbackJsonWebHandler *items = new AsyncCallbackJsonWebHandler("/api/items",
+        [](AsyncWebServerRequest *r, JsonVariant &json){
+            if(!json["locos"].is<JsonArray>() || !json["items"].is<JsonArray>()){
+                r->send(400, "text/plain", "Ungültige Liste");
+                return;
+            }
+            File f = LittleFS.open(ITEMS_FILE, "w");
+            if(!f){
+                r->send(500, "text/plain", "Speichern fehlgeschlagen");
+                return;
+            }
+            serializeJson(json, f);
+            f.close();
+            r->send(200, "text/plain", "Gespeichert");
+        });
+    items->setMaxContentLength(ITEMS_MAX_SIZE);
+    server.addHandler(items);
 
     server.on("/api/config/reset", HTTP_POST, [](AsyncWebServerRequest *r){
         clearConfig();
@@ -563,6 +697,7 @@ void loop(){
     linkLoop();
     udpLoop();
     wifiLoop();
+    webZ21Loop();
     ws.cleanupClients();
     if(restartAt && (int32_t)(millis() - restartAt) >= 0){
         ESP.restart();
