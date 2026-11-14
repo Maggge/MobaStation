@@ -38,6 +38,24 @@ arduino-cli compile --fqbn arduino:avr:mega --library . examples/MobaStationEth
 Copy MobaStationConfig.example.h to MobaStationConfig.h in the folder of the MobaStation library if you
 want to change the pins or the default settings without editing the library.
 
+<h3>Development with make</h3>
+
+The Makefile wraps arduino-cli. The DCC and MobaBus libraries are used directly from their git
+checkouts next to this repository (../DCC and ../MobaBus), so changes there are compiled in without copying.
+
+```
+make setup                     # AVR core, libraries, clones DCC and MobaBus, creates MobaStationConfig.h
+make build                     # compile examples/MobaStationWiFi
+make upload                    # compile and flash (PORT=/dev/ttyUSB0)
+make monitor                   # serial console, exit with Ctrl+C
+make log                       # serial output of the first 20 seconds after a reset
+make z21test                   # Z21 LAN selftest against Z21_IP (192.168.30.111)
+make upload SKETCH=examples/MobaStationEth PORT=/dev/ttyUSB1
+```
+
+All settings (WiFi, IP or DHCP, motor shield, MobaBus, XpressNet) are in MobaStationConfig.h, the sketches need no changes.
+`extras/z21test.py IP info|power on|loco 3 40|turnout 5 1|listen` sends single Z21 commands.
+
 The <a href=https://github.com/Maggge/MobaStation/releases>releases</a> contain prebuild firmware plus the Config Tool,
 so building it yourself is only needed if you want to modify something.
 

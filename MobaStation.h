@@ -55,12 +55,68 @@ DueFlashStorage FlashStore;
 
 //Optional user configuration: copy MobaStationConfig.example.h to MobaStationConfig.h in this
 //(the library) folder to change pins and default settings without editing the library
-#if defined(__has_include)
-#  if __has_include("MobaStationConfig.h")
-#    include "MobaStationConfig.h"
-#  endif
+#include "MobaStationUserConfig.h"
+
+
+//Network settings used by MobaStation::attachEthInterface(interface),
+//the addresses are written with commas: 192,168,0,111
+#ifndef NETWORK_DHCP
+#define NETWORK_DHCP 0                  //1 = address from the router, NETWORK_IP is the fallback
+#endif
+#ifndef NETWORK_IP
+#define NETWORK_IP 192,168,0,111
+#endif
+#ifndef NETWORK_SUBNET
+#define NETWORK_SUBNET 255,255,255,0
+#endif
+#ifndef NETWORK_GATEWAY
+#define NETWORK_GATEWAY 0,0,0,0         //0,0,0,0 = first address of the subnet
 #endif
 
+//Hardware of the example sketches, they build the objects from these settings
+//motor shield of the DCC library (MotorDrivers.h), eg. STANDARD_MOTOR_SHIELD, POLOLU_MOTOR_SHIELD
+#ifndef MOTOR_SHIELD_TYPE
+#define MOTOR_SHIELD_TYPE STANDARD_MOTOR_SHIELD
+#endif
+//1 = trains can also drive on the programming track
+#ifndef DRIVE_ON_PROG
+#define DRIVE_ON_PROG 1
+#endif
+//MobaBus over CAN (MCP2515), 0 = no MobaBus
+#ifndef MOBABUS_ENABLED
+#define MOBABUS_ENABLED 1
+#endif
+#ifndef MOBABUS_EEPROM
+#define MOBABUS_EEPROM 1000             //EEPROM storage of the MobaBus modules
+#endif
+//programming button and status LED of MobaBus. The library default 8/9 are the
+//brake pins of the Arduino Motor Shield: pin 8 reads as a pressed button and after
+//10 seconds MobaBus erases the whole EEPROM and reboots
+#ifndef MOBABUS_PROG_PIN
+#define MOBABUS_PROG_PIN 26
+#endif
+#ifndef MOBABUS_LED_PIN
+#define MOBABUS_LED_PIN 27
+#endif
+#ifndef MOBABUS_CAN_CS
+#define MOBABUS_CAN_CS 53
+#endif
+#ifndef MOBABUS_CAN_INT
+#define MOBABUS_CAN_INT 21
+#endif
+#ifndef MOBABUS_CAN_SPEED
+#define MOBABUS_CAN_SPEED CAN_125KBPS
+#endif
+#ifndef MOBABUS_CAN_CLOCK
+#define MOBABUS_CAN_CLOCK MCP_8MHZ       //crystal of the MCP2515 module
+#endif
+//XpressNet over a MAX485 on Serial1 (TX1/RX1), 0 = no XpressNet
+#ifndef XPRESSNET_ENABLED
+#define XPRESSNET_ENABLED 1
+#endif
+#ifndef XPRESSNET_CONTROL_PIN
+#define XPRESSNET_CONTROL_PIN 22        //direction pin (DE/RE) of the MAX485
+#endif
 
 //Config Storage inside EEPROM
 #ifndef CONFIG_STORAGE
@@ -257,7 +313,11 @@ public:
     static void addXpressNetClient(uint8_t client, uint16_t loco);
     static void attachXpressNet(XpressNetMasterClass *xpressNet, uint8_t sendReceivePin);
 
+    //network settings from MobaStationConfig.h (NETWORK_DHCP, NETWORK_IP, ...)
+    static bool attachEthInterface(Eth_Interface *eth, uint16_t port = Z21_STANDARD_PORT);
+    //static address, eg. for a second interface in another network
     static bool attachEthInterface(Eth_Interface *eth, IPAddress ip, uint16_t port, IPAddress subnetMask);
+    static bool attachEthInterface(Eth_Interface *eth, const NetworkConfig &net, uint16_t port);
 
     static void attachMobaBus(MobaBus *m);    
 

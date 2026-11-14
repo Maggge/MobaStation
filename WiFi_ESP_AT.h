@@ -28,11 +28,7 @@
 
 //the WiFi files are compiled without MobaStation.h, so they pick up the
 //user configuration themselves (WIFI_* settings)
-#if defined(__has_include)
-#  if __has_include("MobaStationConfig.h")
-#    include "MobaStationConfig.h"
-#  endif
-#endif
+#include "MobaStationUserConfig.h"
 
 typedef __FlashStringHelper FSH;
 #define GETFLASH(addr) pgm_read_byte_near(addr)
@@ -141,6 +137,10 @@ private:
     bool stationMode = false;       //a station connection must be kept alive
     bool staticIpSet = false;
     uint8_t staticIp[4] = {0};
+    uint8_t staticGateway[4] = {0};    //0.0.0.0 = only the ip is set
+    uint8_t staticSubnet[4] = {0};
+    //prints "ip" or "ip","gateway","netmask" of the static address
+    void printStaticIp();
     char linkHost[16] = "0.0.0.0";  //host of the link that has to be reopened
     uint16_t linkPort = 0;
     uint8_t linkId = 255;
@@ -192,6 +192,8 @@ private:
     void clearSendQueue();
 
     bool checkForAnswer( const unsigned int timeout, const FSH * waitfor);
+    //waits for the end of AT+CWJAP and prints why it failed (+CWJAP:<code>)
+    bool waitJoin(uint32_t timeout);
     bool checkForOk(const unsigned int timeout);
 
     //Return the linkID, 255 if not successfull
@@ -208,6 +210,12 @@ public:
     bool init(Stream *stream);
 
     bool setIP(IPAddress ip);
+    //static address with gateway and netmask, kept for the reconnect
+    bool setIP(IPAddress ip, IPAddress gateway, IPAddress subnet);
+    //the station gets its address from the router, a static address is forgotten
+    bool enableDHCP();
+    //address of the station, asks the module (blocking, max ~3s), 0.0.0.0 if unknown
+    IPAddress localIP();
     bool setIP(const char *ip);
     bool setHostname(const char *hostname);
     bool connectToAP(const char * ssid, const char * pwd);

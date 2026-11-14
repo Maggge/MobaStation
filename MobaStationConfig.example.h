@@ -23,14 +23,89 @@
 
 Copy this file into the folder of the MobaStation library (next to MobaStation.h) and
 rename it to "MobaStationConfig.h", MobaStation.h picks it up automatically.
-The file is included by several library files, so it may only contain #defines.
+It is included once through MobaStationUserConfig.h, it should only contain #defines.
 
 Every setting is optional, the value in the comment is the default.
-The motor shield and whether the prog track is driven are defined in the
-sketch itself (MOTOR_SHIELD_TYPE and DRIVE_ON_PROG), the XpressNet is
-attached at runtime with MobaStation::attachXpressNet().
+The example sketches take all their settings (WiFi, Ethernet, motor shield,
+MobaBus, XpressNet) from this file, they need no changes.
 
 **********************************************************************/
+
+/////////////////////////////////////////////////////////////////////////////////
+//
+// HARDWARE (used by the example sketches to build the objects)
+//
+// motor shield of the DCC library (MotorDrivers.h), eg. STANDARD_MOTOR_SHIELD
+//#define MOTOR_SHIELD_TYPE STANDARD_MOTOR_SHIELD
+//
+// 1 = trains can also drive on the programming track
+//#define DRIVE_ON_PROG 1
+//
+// MobaBus over CAN with a MCP2515 module, 0 = no MobaBus
+// (without a CAN module connected it must be 0)
+//#define MOBABUS_ENABLED 1
+//#define MOBABUS_EEPROM 1000
+//
+// programming button (to GND) and status LED of MobaBus. Never use 8 and 9 with the
+// Arduino Motor Shield, these are its brake pins: pin 8 reads as a pressed button and
+// MobaBus erases the whole EEPROM after 10 seconds
+//#define MOBABUS_PROG_PIN 26
+//#define MOBABUS_LED_PIN 27
+//#define MOBABUS_CAN_CS 53
+//#define MOBABUS_CAN_INT 21
+//#define MOBABUS_CAN_SPEED CAN_250KBPS
+//#define MOBABUS_CAN_CLOCK MCP_8MHZ
+//
+// XpressNet with a MAX485 on Serial1 (TX1/RX1), 0 = no XpressNet
+//#define XPRESSNET_ENABLED 1
+//#define XPRESSNET_CONTROL_PIN 22
+
+/////////////////////////////////////////////////////////////////////////////////
+//
+// ETHERNET MODULE (example MobaStationEth)
+//
+// chip select pin of the W5x00
+//#define ETH_CS_PIN 49
+//
+// MAC address, must be unique in your network
+//#define ETH_MAC 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED
+
+/////////////////////////////////////////////////////////////////////////////////
+//
+// WIFI (example MobaStationWiFi, ESP8266 with AT firmware 1.7)
+//
+// your router. Quotes, commas and backslashes are not possible, they break the AT command
+//#define WIFI_SSID "ssid"
+//#define WIFI_PWD "password"
+//
+// Station_Mode, SoftAP_Mode or Hybrid_MODE (station, own accesspoint as fallback)
+//#define WIFI_MODE Hybrid_MODE
+//
+// serial port of the ESP8266, Serial3 on the Mega + WiFi R3 boards
+//#define WIFI_SERIAL Serial3
+
+/////////////////////////////////////////////////////////////////////////////////
+//
+// NETWORK (used by MobaStation::attachEthInterface(interface))
+//
+// addresses are written with commas: 192,168,0,111
+//
+// 1 = get the address from the router (DHCP). The address is printed on the
+// serial console at the start, NETWORK_IP is used when no DHCP server answers.
+// A fixed address is easier for the Z21 apps, you can also reserve one in the router.
+//#define NETWORK_DHCP 0
+//
+// static address, with DHCP the fallback. The WiFi accesspoint (SoftAP mode and
+// hybrid fallback) always uses this address
+//#define NETWORK_IP 192,168,0,111
+//#define NETWORK_SUBNET 255,255,255,0
+//
+// 0,0,0,0 = first address of the subnet (192.168.0.1), the Z21 protocol needs no gateway
+//#define NETWORK_GATEWAY 0,0,0,0
+//
+// how long the Ethernet shield waits for a DHCP server, this blocks
+// at the start and when the cable is plugged in again
+//#define ETH_DHCP_TIMEOUT 10000
 
 /////////////////////////////////////////////////////////////////////////////////
 //
@@ -72,7 +147,7 @@ attached at runtime with MobaStation::attachXpressNet().
 // not overlap these areas (the examples use 1000 for MobaBus)
 //#define CONFIG_STORAGE 0
 //
-// maximum number of LAN clients, each client uses 38 bytes of RAM
+// maximum number of LAN clients, each client uses 43 bytes of RAM
 //#define z21clientMAX 20
 //
 // number of Ethernet/WiFi interfaces that can be attached
@@ -109,6 +184,7 @@ attached at runtime with MobaStation::attachXpressNet().
 // the accesspoint uses the ip address of MobaStation, change the password,
 // the default one is public. The password needs at least 8 characters.
 //#define WIFI_AP_SSID "MobaStation"
+// only letters and digits, the password is passed inside an AT command
 //#define WIFI_AP_PWD "MobaStation"
 
 /////////////////////////////////////////////////////////////////////////////////

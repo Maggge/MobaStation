@@ -109,12 +109,31 @@ static uint8_t speedFromDcc128(uint8_t speed, bool dir, uint8_t steps){
   return (dir ? 0x80 : 0x00) | value;
 }
 
+bool MobaStation::attachEthInterface(Eth_Interface *eth, uint16_t port){
+  NetworkConfig net;
+  net.dhcp = NETWORK_DHCP;
+  net.ip = IPAddress(NETWORK_IP);
+  net.subnet = IPAddress(NETWORK_SUBNET);
+  net.gateway = IPAddress(NETWORK_GATEWAY);
+  return attachEthInterface(eth, net, port);
+}
+
 bool MobaStation::attachEthInterface(Eth_Interface *eth, IPAddress ip, uint16_t port, IPAddress subnetMask){
+  NetworkConfig net;
+  net.dhcp = false;
+  net.ip = ip;
+  net.subnet = subnetMask;
+  net.gateway = IPAddress();
+  return attachEthInterface(eth, net, port);
+}
+
+bool MobaStation::attachEthInterface(Eth_Interface *eth, const NetworkConfig &net, uint16_t port){
+  if(eth == NULL) return false;
   _port = port;   //answers to clients that are not registered go to this port
   for(int i = 0; i < ETH_INTERFACES; i++){
     if(Eth[i] == NULL){
       Eth[i] = eth;
-      return eth->begin(port, ip, subnetMask);
+      return eth->begin(port, net);
     }
   }
   return false;

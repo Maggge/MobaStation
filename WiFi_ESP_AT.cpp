@@ -62,21 +62,67 @@ bool WiFiClass::init(Stream *ser){
 }
 
 bool WiFiClass::setIP(IPAddress ip){
+    return setIP(ip, IPAddress(), IPAddress());
+}
+
+bool WiFiClass::setIP(IPAddress ip, IPAddress gateway, IPAddress subnet){
+    //remembered for the reconnect, the module forgets the static ip
     staticIpSet = true;
-    staticIp[0] = ip[0];
-    staticIp[1] = ip[1];
-    staticIp[2] = ip[2];
-    staticIp[3] = ip[3];
-    wifi->print("AT+CIPSTA_CUR=\"");
-    wifi->print(ip[0]);
-    wifi->print(".");
-    wifi->print(ip[1]);
-    wifi->print(".");
-    wifi->print(ip[2]);
-    wifi->print(".");
-    wifi->print(ip[3]);
-    wifi->print("\"\r\n");
+    for(uint8_t i = 0; i < 4; i++){
+        staticIp[i] = ip[i];
+        staticGateway[i] = gateway[i];
+        staticSubnet[i] = subnet[i];
+    }
+    wifi->print("AT+CIPSTA_CUR=");
+    printStaticIp();
     return checkForOk(2000);
+}
+
+void WiFiClass::printStaticIp(){
+    const uint8_t *parts[3] = {staticIp, staticGateway, staticSubnet};
+    //without a gateway the module keeps its own gateway and netmask
+    uint8_t n = (staticGateway[0] | staticGateway[1] | staticGateway[2] | staticGateway[3]) ? 3 : 1;
+    for(uint8_t p = 0; p < n; p++){
+        wifi->print(p ? ",\"" : "\"");
+        for(uint8_t i = 0; i < 4; i++){
+            if(i) wifi->print('.');
+            wifi->print(parts[p][i]);
+        }
+        wifi->print('"');
+    }
+    wifi->print("\r\n");
+}
+
+bool WiFiClass::enableDHCP(){
+    staticIpSet = false;
+    //mode 1 = station, 1 = enable. A static address of an earlier run is dropped
+    wifi->print(oldCmd ? "AT+CWDHCP=1,1\r\n" : "AT+CWDHCP_CUR=1,1\r\n");
+    return checkForOk(2000);
+}
+
+IPAddress WiFiClass::localIP(){
+    IPAddress ip;
+    //+CIFSR:STAIP,"192.168.0.23"
+    wifi->print("AT+CIFSR\r\n");
+    if(checkForAnswer(2000, F("STAIP,\""))){
+        char buf[16];
+        uint8_t n = 0;
+        uint32_t start = millis();
+        while(n < sizeof(buf) - 1 && millis() - start < 500){
+            if(!wifi->available()){
+                delay(1);
+                continue;
+            }
+            char c = wifi->read();
+            if(c == '"') break;
+            buf[n++] = c;
+        }
+        buf[n] = '\0';
+        if(!ip.fromString(buf)) ip = IPAddress();
+    }
+    //the rest of the answer (MAC, OK) must not reach the receive parser
+    checkForOk(1000);
+    return ip;
 }
 
 bool WiFiClass::setIP(const char *ip){
@@ -118,6 +164,9 @@ bool WiFiClass::setIP(const char *ip){
         staticIp[1] = oct[1];
         staticIp[2] = oct[2];
         staticIp[3] = oct[3];
+        //only the ip is sent, the reconnect must not add an old gateway
+        memset(staticGateway, 0, sizeof(staticGateway));
+        memset(staticSubnet, 0, sizeof(staticSubnet));
     }
     wifi->print("AT+CIPSTA_CUR=\"");
     wifi->print(ip);
@@ -137,7 +186,10 @@ bool WiFiClass::connectToAP(const char * ssid, const char * pwd){
     //Set the wifi Mode
     //_CUR: the mode is not written into the flash of the module on every start
     wifi->print(oldCmd ? "AT+CWMODE=1\r\n" : "AT+CWMODE_CUR=1\r\n");
-    if(!checkForOk(1000)) return false;
+    if(!checkForOk(1000)){
+        Serial.print(F(" (station mode not accepted)"));
+        return false;
+    }
     activeMode = Station_Mode;
     stationMode = true;
     apActive = false;
@@ -161,7 +213,7 @@ bool WiFiClass::connectToAP(const char * ssid, const char * pwd){
         wifi->print("\",\"");
         wifi->print(pwd);
         wifi->print("\"\r\n");
-        ipOk = checkForOk(WIFI_CONNECT_TIMEOUT);
+        ipOk = waitJoin(WIFI_CONNECT_TIMEOUT);
     }
     else{      
         wifi->print("AT+CWJAP_CUR=\"");
@@ -169,7 +221,7 @@ bool WiFiClass::connectToAP(const char * ssid, const char * pwd){
         wifi->print("\",\"");
         wifi->print(pwd);
         wifi->print("\"\r\n");
-        ipOk = checkForOk(WIFI_CONNECT_TIMEOUT);
+        ipOk = waitJoin(WIFI_CONNECT_TIMEOUT);
     }
 
     if(ipOk){
@@ -1185,19 +1237,12 @@ void WiFiClass::reconnectJoin(){
 void WiFiClass::reconnectSetIp(){
     reconnectState = RECONNECT_IP;
     if(!staticIpSet){
-        //nothing to set, the next loop iteration continues with the hostname
+        //DHCP: nothing to set, the next loop iteration continues with the hostname
         reconnectState = RECONNECT_HOSTNAME;
         return;
     }
-    sendCmd(F("AT+CIPSTA_CUR=\""), WIFI_CMD_IP, 3000);
-    wifi->print(staticIp[0]);
-    wifi->print('.');
-    wifi->print(staticIp[1]);
-    wifi->print('.');
-    wifi->print(staticIp[2]);
-    wifi->print('.');
-    wifi->print(staticIp[3]);
-    wifi->println("\"");
+    sendCmd(F("AT+CIPSTA_CUR="), WIFI_CMD_IP, 3000);
+    printStaticIp();
 }
 
 void WiFiClass::reconnectHostname(){
@@ -1413,6 +1458,41 @@ bool WiFiClass::checkForAnswer( const unsigned int timeout, const FSH * waitfor)
     Serial.print(timeout);
     Serial.println(" ms");
     #endif
+    return false;
+}
+
+bool WiFiClass::waitJoin(uint32_t timeout){
+    char l[24];
+    uint8_t n = 0;
+    uint8_t code = 0;
+    uint32_t start = millis();
+    while(millis() - start < timeout){
+        if(!wifi->available()){
+            delay(1);
+            continue;
+        }
+        char c = wifi->read();
+        if(c != '\n'){
+            if(c != '\r' && n < sizeof(l) - 1) l[n++] = c;
+            continue;
+        }
+        l[n] = '\0';
+        n = 0;
+        if(strcmp(l, "OK") == 0) return true;
+        if(strncmp(l, "+CWJAP:", 7) == 0) code = l[7] - '0';
+        if(strcmp(l, "FAIL") == 0 || strcmp(l, "ERROR") == 0){
+            //printed without DEBUG, it is the only hint why the station is not reachable
+            switch(code){
+                case 1:  Serial.print(F(" (timeout)")); break;
+                case 2:  Serial.print(F(" (wrong password)")); break;
+                case 3:  Serial.print(F(" (accesspoint not found, only 2.4 GHz is possible)")); break;
+                case 4:  Serial.print(F(" (connection failed)")); break;
+                default: Serial.print(F(" (no reason given)")); break;
+            }
+            return false;
+        }
+    }
+    Serial.print(F(" (no answer within WIFI_CONNECT_TIMEOUT)"));
     return false;
 }
 

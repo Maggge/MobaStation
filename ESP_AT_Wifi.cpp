@@ -29,10 +29,9 @@ ESP_AT_Wifi::ESP_AT_Wifi(HardwareSerial *serial, const char * ssid, const char *
     _mode = mode;
 }
 
-bool ESP_AT_Wifi::begin(uint16_t port, IPAddress ip, IPAddress subnetMask){
+bool ESP_AT_Wifi::begin(uint16_t port, const NetworkConfig &net){
     _port = port;
-    _ip = ip;
-    _subnet = subnetMask;
+    _net = net;
     if(!WiFi.init(ser, 115200)){
         Serial.println(F("No WiFi module found"));
         return false;
@@ -41,10 +40,10 @@ bool ESP_AT_Wifi::begin(uint16_t port, IPAddress ip, IPAddress subnetMask){
     if(_mode == Hybrid_MODE){
         Serial.println(F("Start Wifi in Hybrid mode"));
         //the reconnect state machine starts this accesspoint later on its own
-        //if the station gets lost and can not be reached again
-        WiFi.enableFallbackAP(WIFI_AP_SSID, WIFI_AP_PWD, ip);
-        if(!connectToAP(_ssid, _pwd)){
-            Serial.println(F("FAILED!"));
+        //if the station gets lost and can not be reached again.
+        //The accesspoint always uses the static address, also with DHCP
+        WiFi.enableFallbackAP(WIFI_AP_SSID, WIFI_AP_PWD, _net.ip);
+        if(!connectStation()){
             //accesspoint and station at the same time, the station is
             //searched in the background and replaces the accesspoint
             if(!startAP(WIFI_AP_SSID, WIFI_AP_PWD, true)){
@@ -52,32 +51,11 @@ bool ESP_AT_Wifi::begin(uint16_t port, IPAddress ip, IPAddress subnetMask){
             }
             WiFi.startReconnect();
         }
-        else{
-            Serial.println(F("CONNECTED!"));
-            if(setIP(ip)){
-                Serial.print(F("IP Address: "));
-                Serial.println(ip);
-            }
-            if(WiFi.setHostname("MobaStation")){
-                Serial.println(F("Hostname: Mobastation"));
-            }
-        }
     }
     else if(_mode == Station_Mode){
         Serial.println(F("Start Wifi in Station mode"));
-        if(!connectToAP(_ssid, _pwd)){
-            Serial.println(F("FAILED!"));
+        if(!connectStation()){
             return false;
-        }
-        else{
-            Serial.println(F("CONNECTED!"));
-            if(setIP(ip)){
-                Serial.print(F("IP Address: "));
-                Serial.println(ip);
-            }
-            if(WiFi.setHostname("MobaStation")){
-                Serial.println(F("Hostname: Mobastation"));
-            }
         }
     }
     else if(_mode == SoftAP_Mode){
@@ -92,6 +70,28 @@ bool ESP_AT_Wifi::begin(uint16_t port, IPAddress ip, IPAddress subnetMask){
     Udp.begin(port);
     Serial.print(F("MobaStation is listen on Port: "));
     Serial.println(port);
+    return true;
+}
+
+bool ESP_AT_Wifi::connectStation(){
+    if(_net.dhcp){
+        //before the join, the module may still have a static address of an earlier run
+        WiFi.enableDHCP();
+    }
+    if(!connectToAP(_ssid, _pwd)){
+        Serial.println(F("FAILED!"));
+        return false;
+    }
+    Serial.println(F("CONNECTED!"));
+    if(!_net.dhcp){
+        WiFi.setIP(_net.ip, gatewayOf(_net), _net.subnet);
+    }
+    if(WiFi.setHostname("MobaStation")){
+        Serial.println(F("Hostname: Mobastation"));
+    }
+    //always printed, with DHCP this is the address the Z21 clients need
+    Serial.print(F("IP Address: "));
+    Serial.println(WiFi.localIP());
     return true;
 }
 
@@ -122,7 +122,7 @@ bool ESP_AT_Wifi::setIP(const char *ip){
 bool ESP_AT_Wifi::startAP(const char * ssid, const char * pwd, bool keepStation){
     Serial.println(F("Start AccessPoint!"));
     //the accesspoint gets the ip of the station, so the clients need no other settings
-    if(WiFi.startAP(ssid, pwd, _ip, keepStation)){
+    if(WiFi.startAP(ssid, pwd, _net.ip, keepStation)){
         printAP(ssid, pwd);
         return true;
     }

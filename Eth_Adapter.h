@@ -27,7 +27,22 @@
 #include <EthernetUdp.h>
 
 #include "Eth_Interface.h"
+//compiled without MobaStation.h, ETH_DHCP_TIMEOUT may come from the user configuration
+#include "MobaStationUserConfig.h"
 
+//W5x00 of the example sketch: chip select pin and MAC address (must be unique in the network)
+#ifndef ETH_CS_PIN
+#define ETH_CS_PIN 49
+#endif
+#ifndef ETH_MAC
+#define ETH_MAC 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED
+#endif
+
+//how long the DHCP request may take before the static address is used,
+//it blocks: at the start and when the cable is plugged in again
+#ifndef ETH_DHCP_TIMEOUT
+#define ETH_DHCP_TIMEOUT 10000
+#endif
 
 class Eth_Adapter : public Eth_Interface{
 private:
@@ -36,9 +51,9 @@ private:
     uint8_t cs;
     byte *mac;
 
-    IPAddress ip;
-    IPAddress subnetMask;
+    NetworkConfig net;
     IPAddress gateway;
+    bool dhcpActive = false;    //the address came from DHCP, the lease must be renewed
 
     uint16_t port;
 
@@ -52,13 +67,12 @@ public:
     /**
      * @brief Construct a new Eth_Adapter object
      * 
-     * @param cs 
-     * @param mac 
-     * @param backup interface, maybe Wifi. If the link is down on startup the backup Interface will be initialized
+     * @param cs chip select pin of the W5x00
+     * @param mac MAC address, must be unique in the network
      */
     Eth_Adapter(uint8_t cs, byte * mac);
 
-    bool begin(uint16_t port, IPAddress ip, IPAddress subnetMask);
+    bool begin(uint16_t port, const NetworkConfig &net);
     bool send(IPAddress client, uint16_t dstPort, uint8_t *data);
     bool receivePacket(UdpPacket *pkg);    
 

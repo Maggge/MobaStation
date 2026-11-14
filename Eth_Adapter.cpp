@@ -30,12 +30,10 @@ Eth_Adapter::Eth_Adapter(uint8_t cs, byte * mac){
     this->mac = mac;
 }
 
-bool Eth_Adapter::begin(uint16_t port,  IPAddress ip, IPAddress subnetMask){
+bool Eth_Adapter::begin(uint16_t port, const NetworkConfig &net){
     this->port = port;
-    this->ip = ip;
-    this->subnetMask = subnetMask;
-    //no gateway/DNS needed for the Z21 LAN protocol, use the first address of the subnet
-    this->gateway = IPAddress(ip[0], ip[1], ip[2], 1);
+    this->net = net;
+    gateway = gatewayOf(net);
 
     Ethernet.init(cs);
 
@@ -43,13 +41,25 @@ bool Eth_Adapter::begin(uint16_t port,  IPAddress ip, IPAddress subnetMask){
 }
 
 bool Eth_Adapter::initStack(){
-    //Attention: the order of the arguments is mac, ip, dns, gateway, subnetMask
-    Ethernet.begin(mac, ip, gateway, gateway, subnetMask);
+    dhcpActive = false;
+    if(net.dhcp){
+        Serial.print(F("Ethernet DHCP..."));
+        //returns 0 without hardware, without link or when no server answers
+        if(Ethernet.begin(mac, ETH_DHCP_TIMEOUT, 4000) == 1){
+            dhcpActive = true;
+            Serial.println(F(" OK"));
+        }
+        else{
+            Serial.println(F(" failed, using the static address"));
+        }
+    }
+    if(!dhcpActive){
+        //Attention: the order of the arguments is mac, ip, dns, gateway, subnetMask
+        Ethernet.begin(mac, net.ip, gateway, gateway, net.subnet);
+    }
 
     if(Ethernet.hardwareStatus() == EthernetNoHardware){
-        #ifdef DEBUG
-        Serial.println("Ethernet shield was not found.");
-        #endif
+        Serial.println(F("Ethernet shield was not found."));
         return false;
     }
 
@@ -62,10 +72,9 @@ bool Eth_Adapter::initStack(){
 
     Udp.stop();
     Udp.begin(port);
-    #ifdef DEBUG
-    Serial.print("Ethernet connected IP: ");
+    //always printed, with DHCP this is the address the Z21 clients need
+    Serial.print(F("Ethernet IP: "));
     Serial.println(Ethernet.localIP());
-    #endif
     return true;
 }
 
@@ -105,6 +114,11 @@ bool Eth_Adapter::receivePacket(UdpPacket *pkg){
             #endif
             initStack();
         }
+    }
+
+    if(dhcpActive){
+        //renews the lease in time, only talks to the server when it is due
+        Ethernet.maintain();
     }
 
     int pkgSize = Udp.parsePacket();

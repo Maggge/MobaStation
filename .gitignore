@@ -1,0 +1,27 @@
+# Local configuration, copied from MobaStationConfig.example.h
+# (pins, IP settings, WiFi access point password)
+MobaStationConfig.h
+
+# Arduino / arduino-cli build output
+build/
+/arduino/
+*.hex
+*.elf
+*.bin
+*.eep
+*.map
+*.o
+*.a
+
+# PlatformIO
+.pio/
+
+# Editors and IDEs
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS files
+.DS_Store
+Thumbs.db

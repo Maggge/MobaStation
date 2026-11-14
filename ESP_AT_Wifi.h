@@ -26,6 +26,23 @@
 #include "Eth_Interface.h"
 #include "WiFiUdp.h"
 
+//WiFi of the example sketch
+//accesspoint (router) the station connects to, empty = the one stored in the ESP
+#ifndef WIFI_SSID
+#define WIFI_SSID ""
+#endif
+#ifndef WIFI_PWD
+#define WIFI_PWD ""
+#endif
+//Station_Mode, SoftAP_Mode or Hybrid_MODE (station, own accesspoint as fallback)
+#ifndef WIFI_MODE
+#define WIFI_MODE Hybrid_MODE
+#endif
+//serial port of the ESP8266, Serial3 on the Mega WiFi R3 boards
+#ifndef WIFI_SERIAL
+#define WIFI_SERIAL Serial3
+#endif
+
 //accesspoint of the SoftAP mode and of the hybrid fallback,
 //set your own password in MobaStationConfig.h, everybody knows this one
 #ifndef WIFI_AP_SSID
@@ -47,10 +64,11 @@ private:
     const char * _pwd;
     uint16_t _port;
 
-    IPAddress _ip;
-    IPAddress _subnet;
+    NetworkConfig _net;
 
     void printAP(const char * ssid, const char * pwd);
+    //join the accesspoint and set the address (static or DHCP), blocking
+    bool connectStation();
     
 public:
     /**
@@ -62,7 +80,7 @@ public:
      */
     ESP_AT_Wifi(HardwareSerial *serial, const char *ssid, const char *pwd, WiFiMode mode = Hybrid_MODE);
 
-    bool begin(uint16_t port, IPAddress ip, IPAddress subnetMask);
+    bool begin(uint16_t port, const NetworkConfig &net);
     bool send(IPAddress client, uint16_t dstPort, uint8_t *data);
     bool receivePacket(UdpPacket *pkg);
 
