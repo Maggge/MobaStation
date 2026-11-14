@@ -40,6 +40,13 @@ private:
     const char * _ssid;
     const char * _pwd;
     uint16_t _port;
+
+    IPAddress _ip;
+    IPAddress _subnet;
+    uint8_t reconnectFailures = 0;
+
+    //runs after WiFi.loop(), the link is reopened by the reconnect state machine
+    void handleReconnect();
     
 public:
     ESP_AT_Wifi(HardwareSerial *serial, const char *ssid, const char *pwd, WiFiMode mode = Hybrid_MODE);
@@ -52,6 +59,8 @@ public:
     bool setIP(const char *ip);
     bool connectToAP(const char * ssid, const char * pwd);
     bool startAP(const char * ssid, const char * pwd);
+    //try again to reach the accesspoint, in hybrid mode this falls back to an accesspoint
+    void reconnect();
     
 };
 

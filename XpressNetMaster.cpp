@@ -975,14 +975,18 @@ void XpressNetMasterClass::XNetsend(byte *dataString, byte byteCount) {
 			RAW_output(dataString, byteCount);
 	#else
 
+		//a slot is free when its length is 0, the TX interrupt resets it after sending.
+		//if the ring is full drop the new packet instead of overwriting one that is
+		//still waiting or (worse) is being sent right now
+		if (byteCount == 0 || byteCount > XNetBufferMaxData || XNetBuffer[XNetBufferStore].length != 0x00)
+			return;
+
 		#if defined (XNetDEBUG)
 		if (byteCount > 1) {
 			XNetSerial.print("XTX: ");
 		}
 		#endif
-		
-		XNetBuffer[XNetBufferStore].length = byteCount;
-		
+
 		for (byte i = 0; i < byteCount; i++) {
 			XNetBuffer[XNetBufferStore].data[i] = *dataString;	//add data to Buffer
 			dataString++;
@@ -998,7 +1002,13 @@ void XpressNetMasterClass::XNetsend(byte *dataString, byte byteCount) {
 			}
 			#endif
 		}
-		
+
+		//the TX interrupt reads the slot as soon as the length is set, so the
+		//length is written last. The barrier stops the compiler from moving
+		//the data stores behind it, a single byte store is atomic on AVR.
+		__asm__ __volatile__ ("" ::: "memory");
+		XNetBuffer[XNetBufferStore].length = byteCount;
+
 		XNetBufferStore++;
 		if (XNetBufferStore >= XNetBufferSize)
 			XNetBufferStore = 0;

@@ -29,14 +29,51 @@
 typedef __FlashStringHelper FSH;
 #define GETFLASH(addr) pgm_read_byte_near(addr)
 
+#ifndef WIFI_CONNECT_TIMEOUT
 #define WIFI_CONNECT_TIMEOUT 16000
+#endif
 
-#define SEND_BUF_SIZE 20
+//time between two wifi reconnect attempts
+#ifndef WIFI_RECONNECT_INTERVAL
+#define WIFI_RECONNECT_INTERVAL 5000
+#endif
+
+//how long a single AT+CWJAP of a reconnect may take
+#ifndef WIFI_RECONNECT_JOIN_TIMEOUT
+#define WIFI_RECONNECT_JOIN_TIMEOUT 12000
+#endif
+
+//the debug build is close to the ram limit of the mega, so the send queue is
+//smaller there, 20 packets would need 1420 bytes
+#ifndef SEND_BUF_SIZE
+  #ifdef DEBUG
+  #define SEND_BUF_SIZE 12
+  #else
+  #define SEND_BUF_SIZE 20
+  #endif
+#endif
 
 #define SEND_TIMEOUT 200
 
 //usable client links when CIPMUX=1. link 4 is reserved by the AT firmware for the TCP server
 #define WIFI_LINKS 4
+
+//max length of an ssid and a password in the AT firmware
+#define WIFI_SSID_MAX_LEN 32
+#define WIFI_PWD_MAX_LEN 64
+
+//size of the buffer used to parse unsolicited result codes and AT responses
+#define WIFI_LINE_SIZE 24
+
+//AT commands that are sent by the reconnect state machine
+#define WIFI_CMD_NONE 0
+#define WIFI_CMD_JOIN 1
+#define WIFI_CMD_IP 2
+#define WIFI_CMD_HOSTNAME 3
+#define WIFI_CMD_OPEN 4
+#define WIFI_CMD_SERVER 5
+#define WIFI_CMD_CIPMUX 6
+#define WIFI_CMD_CIPDINFO 7
 
 class WiFiClass{
 private:
@@ -59,11 +96,63 @@ private:
     uint8_t tail = 0;
     bool waitForSend = false;
     bool pendingCipsend = false;
+    bool promptSeen = false;        //the '>' of the pending CIPSEND arrived, the data is written
     uint32_t sendTime = 0;
 
     bool oldCmd = false;
+    //the module echoes everything we write (ATE1), also the payload after the CIPSEND prompt
+    bool echo = true;
 
     bool linkIdOccupied[WIFI_LINKS] = {false};
+
+    //---------------- wifi reconnect ----------------
+    RECONNECT_STATE reconnectState = RECONNECT_IDLE;
+    uint32_t reconnectTime = 0;     //time of the last state change
+    uint8_t joinRetries = 0;
+
+    char ssid[WIFI_SSID_MAX_LEN + 1] = "";
+    char pwd[WIFI_PWD_MAX_LEN + 1] = "";
+
+    bool stationMode = false;       //a station connection must be kept alive
+    bool staticIpSet = false;
+    uint8_t staticIp[4] = {0};
+    char linkHost[16] = "0.0.0.0";  //host of the link that has to be reopened
+    uint16_t linkPort = 0;
+    uint8_t linkId = 255;
+    uint16_t tcpServerPort = 0;     //restart the tcp server after a reconnect
+
+    //response of the AT command that was started by the reconnect state machine
+    uint8_t cmdCmd = WIFI_CMD_NONE;
+    bool cmdExpected = false;
+    uint32_t cmdStart = 0;
+    uint32_t cmdTimeout = 0;
+    char line[WIFI_LINE_SIZE];
+    uint8_t lineIdx = 0;
+    uint8_t matchIdx = 0;
+    uint16_t parseValue = 0;        //current number while parsing
+
+    //parse a text line that was received between the AT commands
+    void handleLine();
+    void linkClosed(uint8_t id);
+    bool lineContains(const char *line, const char *str);
+    bool cmdActive();
+    //called when the response of an AT command of the reconnect is known
+    void cmdResult(bool success);
+    void cmdFail();
+
+    void reconnectStateMachine(uint32_t now);
+    void reconnectNext();
+    void reconnectJoin();
+    void reconnectSetIp();
+    void reconnectHostname();
+    void reconnectCipmux();
+    void reconnectDinfo();
+    void reconnectStartLink();
+
+    void sendCmd(const __FlashStringHelper *cmd, uint8_t what, uint32_t timeout);
+    //wifi connection lost, all links are gone with it
+    void markWifiLost();
+    void clearSendQueue();
 
     bool checkForAnswer( const unsigned int timeout, const FSH * waitfor);
     bool checkForOk(const unsigned int timeout);
@@ -71,8 +160,12 @@ private:
     //Return the linkID, 255 if not successfull
     uint8_t getFreeLinkID();
 
+    //packets can be sent as station and as accesspoint
+    bool canSend();
     void sendNext();
     void txData();
+    //the pending packet is done (sent, failed or timed out), continue with the next one
+    void finishSend();
 public:
     bool init(HardwareSerial *ser, unsigned long baud);
     bool init(Stream *stream);
@@ -85,6 +178,16 @@ public:
 
     WiFiMode getMode();
     WL_STATE getStatus();
+    //true while the station connection is down and a reconnect is running
+    RECONNECT_STATE getReconnectState();
+    //number of reconnect attempts of the current wifi outage
+    uint8_t getJoinRetries();
+    //true when the module lost the connection to the access point,
+    //the reconnect runs inside loop() and never blocks
+    bool needsReconnect();
+    //start a reconnect now instead of waiting for WIFI_RECONNECT_INTERVAL
+    void startReconnect();
+
     //Return the linkID, 255 if not successfull
     uint8_t connect(CONN_TYPE type, const char *host, uint16_t port);
     bool disconnect(uint8_t linkID);

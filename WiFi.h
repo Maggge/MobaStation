@@ -47,7 +47,7 @@ enum WL_STATE{
 
 enum RECEIVE_STATE{
     STANDBY,
-    IPD,
+    IPD,            //the char after "+", decides between +IPD and +WIFI DISCONNECT
     LINK_ID,
     LENGTH,
     IP,
@@ -55,6 +55,21 @@ enum RECEIVE_STATE{
     DATA,
     BUFFER,
     SKIPTOEND,
+    URC_LINE,       //unsolicited result code or AT response, read as text line
+    SKIPDATA,       //echo of the bytes written after the CIPSEND prompt
+};
+
+//states of the non blocking wifi reconnect
+enum RECONNECT_STATE{
+    RECONNECT_IDLE = 0,     //no reconnect needed
+    RECONNECT_LINK,         //the udp/tcp link must be opened again
+    RECONNECT_JOIN,         //AT+CWJAP is running
+    RECONNECT_IP,           //the static ip is set
+    RECONNECT_HOSTNAME,     //the hostname is set
+    RECONNECT_OPEN,         //the link is opened
+    RECONNECT_CIPMUX,       //AT+CIPMUX=1
+    RECONNECT_DINFO,        //AT+CIPDINFO=1
+    RECONNECT_WAIT,         //wifi is down, waiting for the next attempt
 };
 
 enum CONN_TYPE{

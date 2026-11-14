@@ -79,3 +79,16 @@ attached at runtime with MobaStation::attachXpressNet().
 //
 // number of throttles on the XpressNet
 //#define MAX_XPRESSNET_CLIENTS 5
+
+/////////////////////////////////////////////////////////////////////////////////
+//
+// WIFI RECONNECT
+//
+// timeout of the AT+CWJAP while MobaStation is started
+//#define WIFI_CONNECT_TIMEOUT 16000
+//
+// time between two wifi reconnect attempts, the reconnect never blocks
+//#define WIFI_RECONNECT_INTERVAL 5000
+//
+// how long a single AT+CWJAP of a reconnect may take
+//#define WIFI_RECONNECT_JOIN_TIMEOUT 12000

@@ -122,6 +122,10 @@ DueFlashStorage FlashStore;
 #define ETH_INTERFACES 2
 #endif
 
+//R-Bus feedback: groups of 10 modules with 8 inputs each, the Z21 protocol knows group 0 and 1
+#define RBUS_GROUPS 2
+#define RBUS_GROUP_SIZE 10
+
 #ifndef MAX_XPRESSNET_CLIENTS
 #define MAX_XPRESSNET_CLIENTS 5
 #endif
@@ -179,7 +183,7 @@ private:
     static uint32_t pwrBtnLast;
     static bool pwrBtnState;
 
-    static uint8_t rBus[20];
+    static uint8_t rBus[RBUS_GROUPS * RBUS_GROUP_SIZE];
 
     static void sendLanPacket(IPAddress client , uint16_t DataLen, uint16_t Header, byte *dataString, boolean withXOR);
 

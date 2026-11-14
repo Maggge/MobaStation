@@ -31,6 +31,8 @@ ESP_AT_Wifi::ESP_AT_Wifi(HardwareSerial *serial, const char * ssid, const char *
 
 bool ESP_AT_Wifi::begin(uint16_t port, IPAddress ip, IPAddress subnetMask){
     _port = port;
+    _ip = ip;
+    _subnet = subnetMask;
     if(!WiFi.init(ser, 115200)){
         Serial.println(F("No WiFi module found"));
         return false;
@@ -40,6 +42,8 @@ bool ESP_AT_Wifi::begin(uint16_t port, IPAddress ip, IPAddress subnetMask){
         Serial.println(F("Start Wifi in Hybrid mode"));
         if(!connectToAP(_ssid, _pwd)){
             Serial.println(F("FAILED!"));
+            //keep trying to reach the accesspoint in the background
+            WiFi.startReconnect();
             if(!startAP(STANDARD_AP_SSID, STANDARD_AP_PWD)){
                 return false;
             }
@@ -109,6 +113,20 @@ bool ESP_AT_Wifi::connectToAP(const char * ssid, const char * pwd){
     return WiFi.connectToAP(ssid, pwd); 
 }
 
+void ESP_AT_Wifi::reconnect(){
+    if(!WiFi.needsReconnect()){
+        return;
+    }
+    if(_mode == Hybrid_MODE){
+        Serial.println(F("Wifi reconnect failed, starting the accesspoint"));
+        reconnectFailures = 0;
+        WiFi.startAP(STANDARD_AP_SSID, STANDARD_AP_PWD);
+    }
+    else{
+        WiFi.startReconnect();
+    }
+}
+
 bool ESP_AT_Wifi::setIP(IPAddress ip){
     return WiFi.setIP(ip);
 }
@@ -148,8 +166,40 @@ bool ESP_AT_Wifi::send(IPAddress client, uint8_t *data){
     return Udp.endPacket();
 }
 
+//-------------------------- PRIVATE ---------------------------------
+
+void ESP_AT_Wifi::handleReconnect(){
+    RECONNECT_STATE rs = WiFi.getReconnectState();
+    if(rs == RECONNECT_IDLE){
+        if(reconnectFailures != 0){
+            reconnectFailures = 0;
+        }
+        return;
+    }
+    //the reconnect itself runs non blocking inside WiFi.loop()
+    if(WiFi.getStatus() == WL_CONNECTED){
+        reconnectFailures = 0;
+    }
+    if(rs != RECONNECT_WAIT) return;
+    if(!WiFi.needsReconnect()){
+        //no station connection that must be kept alive,
+        //eg. the accesspoint fallback is already running
+        return;
+    }
+
+    //all attempts of this wifi outage failed
+    if(_mode != SoftAP_Mode && reconnectFailures < 255){
+        reconnectFailures++;
+    }
+    if(_mode == Hybrid_MODE && reconnectFailures >= 3 && reconnectFailures % 3 == 0){
+        Serial.println(F("Wifi reconnect failed, starting the accesspoint"));
+        WiFi.startAP(STANDARD_AP_SSID, STANDARD_AP_PWD);
+    }
+}
+
 bool ESP_AT_Wifi::receivePacket(UdpPacket *pkg){
     WiFi.loop();
+    handleReconnect();
     int pkgSize = Udp.parsePacket();
     if(pkgSize > 0){
         if(pkgSize > Z21_MAX_UDP_SIZE){

@@ -51,7 +51,7 @@ IPClient MobaStation::z21Clients[z21clientMAX];
 
 uint8_t MobaStation::buffer[Z21_MAX_UDP_SIZE];
 
-uint8_t MobaStation::rBus[20];
+uint8_t MobaStation::rBus[RBUS_GROUPS * RBUS_GROUP_SIZE];
 
 bool MobaStation::railPower;
 uint8_t MobaStation::railState;
@@ -69,6 +69,45 @@ uint8_t MobaStation::writeVal;
 bool MobaStation::cvWrite;
 int16_t MobaStation::ackCv;
 //########################################
+
+//---------- speed step conversion ----------
+//Z21 and XpressNet encode the speed the same way:
+//  14 steps:  R000 VVVV  0 = stop, 1 = emergency stop, 2..15 = step 1..14
+//  28 steps:  R00V VVVV  bit 4 is the least significant speed bit,
+//             code = VVVV << 1 | V: 0/1 = stop, 2/3 = emergency stop, 4..31 = step 1..28
+//  128 steps: RVVV VVVV  0 = stop, 1 = emergency stop, 2..127 = step 1..126
+//R = direction (1 = forward). The DCC library always works with the 128 step code.
+
+static uint8_t speedToDcc128(uint8_t value, uint8_t steps, bool &dir){
+  dir = value & 0x80;
+  if(steps == 14){
+    uint8_t n = value & 0x0F;
+    if(n <= 1) return n;
+    return 2 + (uint16_t)(n - 2) * 125 / 13;
+  }
+  if(steps == 28){
+    uint8_t code = ((value & 0x0F) << 1) | ((value >> 4) & 0x01);
+    if(code <= 1) return 0;
+    if(code <= 3) return 1;
+    return 2 + (uint16_t)(code - 4) * 125 / 27;
+  }
+  return value & 0x7F;
+}
+
+//inverse of speedToDcc128(), the rounding makes the round trip exact
+static uint8_t speedFromDcc128(uint8_t speed, bool dir, uint8_t steps){
+  uint8_t value = speed & 0x7F;   //stop (0) and emergency stop (1) are the same in all formats
+  if(value > 1){
+    if(steps == 14){
+      value = 2 + ((uint16_t)(value - 2) * 13 + 62) / 125;
+    }
+    else if(steps == 28){
+      uint8_t code = 4 + ((uint16_t)(value - 2) * 27 + 62) / 125;
+      value = (code >> 1) | ((code & 0x01) << 4);
+    }
+  }
+  return (dir ? 0x80 : 0x00) | value;
+}
 
 bool MobaStation::attachEthInterface(Eth_Interface *eth, IPAddress ip, uint16_t port, IPAddress subnetMask){
   for(int i = 0; i < ETH_INTERFACES; i++){
@@ -203,14 +242,18 @@ void MobaStation::processMobaBus(){
     #endif
     if(pkg.meta.cmd != INFO) return;
 
+    if(pkg.len < 1) return;   //every info carries at least one data byte
+
     switch (pkg.meta.type)
     {
     case ACCESSORIE:
       broadcastTurnout(pkg.meta.address , pkg.data[0]);
-      break; 
+      break;
     case FEEDBACK:{
+      //the address comes from the bus, never trust it as an array index
+      if(pkg.meta.address < 1 || pkg.meta.address > sizeof(rBus)) break;
       rBus[pkg.meta.address - 1] = pkg.data[0];
-      uint8_t group = (pkg.meta.address - 1) / 10;
+      uint8_t group = (pkg.meta.address - 1) / RBUS_GROUP_SIZE;
       broadcastRbus(group);
       break;
     }
@@ -425,6 +468,7 @@ void MobaStation::processPacket(UdpPacket *packet){
             Serial.print("Group: ");
             Serial.println(packet->data[4]);
             #endif
+            if(packet->data[4] >= RBUS_GROUPS) break;
             data[0] = packet->data[4];
             rBusGetData(packet->data[4], data);
             sendLanPacket(packet->ip, 0x0F, LAN_RMBUS_DATACHANGED, data, false);
@@ -438,7 +482,9 @@ void MobaStation::processPacket(UdpPacket *packet){
             Serial.print("Modul Address: ");
             Serial.println(packet->data[4]);
             #endif
-            mobaBus->sendPkg(FEEDBACK, packet->data[4], SET, 0, data);
+            if(mobaBus != NULL){
+              mobaBus->sendPkg(FEEDBACK, packet->data[4], SET, 0, data);
+            }
             break;
         }
         case LAN_SYSTEMSTATE_GETDATA: {
@@ -698,9 +744,6 @@ void MobaStation::processLanXPacket(UdpPacket *packet){
       DCC::setFn(addr, func, val);
     }
     else{
-      bool dir = (packet->data[8] > 127);
-      uint8_t speed = (packet->data[8] & B01111111);
-
       uint8_t speedSteps = 128;	//default value S=3; DCC 128 Fahrstufen
       if (packet->data[5] == 0x12){	//S=2; DCC 28 Fahrstufen
         speedSteps = 28;
@@ -709,6 +752,10 @@ void MobaStation::processLanXPacket(UdpPacket *packet){
         speedSteps = 14;
       }
 
+      //the library always drives with the 128 step code, the speed steps are only
+      //remembered to report the speed back in the format of the client
+      bool dir;
+      uint8_t speed = speedToDcc128(packet->data[8], speedSteps, dir);
       DCC::setThrottle(addr, speed, speedSteps, dir);
 
       #ifdef DEBUG
@@ -1019,24 +1066,27 @@ uint8_t MobaStation::getLocoInfo(uint16_t addr, uint8_t *data){
   data[1] = (addr >> 8) & 0x3F;
 	data[2] = addr & 0xFF;
 
-  uint8_t speedStepsInfo = DCC::getSpeedSteps(addr); 	
+  uint8_t speedSteps = DCC::getSpeedSteps(addr);
+  uint8_t speedStepsInfo;
 
-  if(speedStepsInfo == 14){
+  if(speedSteps == 14){
     speedStepsInfo = 0;
   }
-  else if(speedStepsInfo == 28){
+  else if(speedSteps == 28){
     speedStepsInfo = 2;
   }
   else{
+    speedSteps = 128;   //unknown loco
     speedStepsInfo = 4;//default value; DCC 128 Fahrstufen
   }
 
-  data[3] = ( speedStepsInfo | 0x08); //BUSY! 
-  
-  uint8_t speed = DCC::getThrottleSpeed(addr);
-  uint8_t dir = DCC::getThrottleDirection(addr);
+  data[3] = ( speedStepsInfo | 0x08); //BUSY!
 
-  data[4] = (dir << 7 | speed);
+  uint8_t speed = DCC::getThrottleSpeed(addr);
+  bool dir = DCC::getThrottleDirection(addr);
+
+  //the library stores the 128 step code, the client expects the format it drives with
+  data[4] = speedFromDcc128(speed, dir, speedSteps);
 
   uint8_t doppelTraktion = 0;
   unsigned long functions = DCC::getFns(addr);
@@ -1116,7 +1166,9 @@ void MobaStation::broadcastLocoInfo(uint16_t addr, IPAddress *force){
     uint8_t speed = DCC::getThrottleSpeed(addr);
     speed = DCC::getThrottleDirection(addr) << 7 | speed;
     for(int i = 0; i < MAX_XPRESSNET_CLIENTS; i++){
-      if(xpressNetClients[i].client > 0){
+      //the loco info frame carries no address, the throttle applies it to the loco it shows,
+      //so only the throttles that control this loco may get it
+      if(xpressNetClients[i].client > 0 && xpressNetClients[i].loco == addr){
         XpressNet->SetLocoInfoMM(xpressNetClients[i].client, speedStepsInfo, speed, ((uint8_t)func >> 1 & B00001111) | ((uint8_t)func << 4 & B00010000), (uint8_t)(func >> 5) & B00001111, (uint8_t)(func >> 9) & B00001111, (uint8_t)(func >> 13));
       }
     }
@@ -1178,8 +1230,9 @@ uint8_t MobaStation::getLocalBcFlag (uint32_t flag) {
 
 
 void MobaStation::rBusGetData(uint8_t group, uint8_t *data){
-  uint8_t idx = group * 10;
-  for(uint8_t i = 0; i < 10; i++){
+  if(group >= RBUS_GROUPS) return;
+  uint8_t idx = group * RBUS_GROUP_SIZE;
+  for(uint8_t i = 0; i < RBUS_GROUP_SIZE; i++){
     data[i+1] = rBus[idx + i];
   }
 }
@@ -1269,28 +1322,6 @@ void notifyXNetPower(uint8_t State) {
 }
 
 //--------------------------------------------------------------
-//Convert XpressNet 14 speed-step format to DCC 128 speed steps
-static uint8_t xnetSpeed14to128(uint8_t xSpeed, bool &dir){
-  dir = (xSpeed >= 0x10);          //0x01-0x0F = reverse, 0x11-0x1F = forward
-  uint8_t n = xSpeed & B00001111;
-  if(n <= 1) return 0;             //emergency stop / stop
-  uint16_t s = 2 + (uint16_t)(n - 2) * 124 / 13; //DCC 14 -> 128 speed steps
-  if(s > 126) s = 126;
-  return (uint8_t)s;
-}
-
-//--------------------------------------------------------------
-//Convert XpressNet 27/28 speed-step format to DCC 128 speed steps
-static uint8_t xnetSpeed28to128(uint8_t xSpeed, bool &dir){
-  dir = (xSpeed >= 0x10);          //0x01-0x0F = reverse, 0x11-0x1F = forward
-  uint8_t n = xSpeed & B00001111;
-  if(n == 0 || n == 1) return 0;   //stop / emergency stop
-  uint16_t s = 2 + (uint16_t)(n - 1) * 124 / 14; //DCC 28 -> 128 speed steps
-  if(s > 126) s = 126;
-  return (uint8_t)s;
-}
-
-//--------------------------------------------------------------
 void notifyXNetLocoDrive14(uint16_t Address, uint8_t Speed) {
   #ifdef DEBUG
   Serial.print("XNet A:");
@@ -1299,8 +1330,8 @@ void notifyXNetLocoDrive14(uint16_t Address, uint8_t Speed) {
   Serial.println(Speed, BIN);
   #endif
   bool dir;
-  uint8_t speed = xnetSpeed14to128(Speed, dir);
-  DCC::setThrottle(Address, speed, 128, dir);
+  uint8_t speed = speedToDcc128(Speed, 14, dir);
+  DCC::setThrottle(Address, speed, 14, dir);
   MobaStation::broadcastLocoInfo(Address);
 }
 
@@ -1312,9 +1343,10 @@ void notifyXNetLocoDrive27(uint16_t Address, uint8_t Speed) {
   Serial.print(", S27:");
   Serial.println(Speed, BIN);
   #endif
+  //27 steps use the 28 step format, the decoder just never gets the highest step
   bool dir;
-  uint8_t speed = xnetSpeed28to128(Speed, dir);
-  DCC::setThrottle(Address, speed, 128, dir);
+  uint8_t speed = speedToDcc128(Speed, 28, dir);
+  DCC::setThrottle(Address, speed, 28, dir);
   MobaStation::broadcastLocoInfo(Address);
 }
 
@@ -1327,8 +1359,8 @@ void notifyXNetLocoDrive28(uint16_t Address, uint8_t Speed) {
   Serial.println(Speed, BIN);
   #endif
   bool dir;
-  uint8_t speed = xnetSpeed28to128(Speed, dir);
-  DCC::setThrottle(Address, speed, 128, dir);
+  uint8_t speed = speedToDcc128(Speed, 28, dir);
+  DCC::setThrottle(Address, speed, 28, dir);
   MobaStation::broadcastLocoInfo(Address);
 }
 
@@ -1340,8 +1372,8 @@ void notifyXNetLocoDrive128(uint16_t Address, uint8_t Speed) {
   Serial.print(", S128:");
   Serial.println(Speed, BIN);
   #endif
-  bool dir = (Speed & B10000000);  //bit 7 = direction
-  uint8_t speed = Speed & B01111111;
+  bool dir;
+  uint8_t speed = speedToDcc128(Speed, 128, dir);
   DCC::setThrottle(Address, speed, 128, dir);
   MobaStation::broadcastLocoInfo(Address);
 }
@@ -1433,7 +1465,9 @@ void notifyXNetTrnt(uint16_t Address, uint8_t data) {
 }
 
 void notifyXNetTrntInfo(uint8_t UserOps, uint8_t Address, uint8_t data) {
-  int adr = ((Address * 4) + ((data & 0x01) * 2));
+  //the pair address the info would be requested with, used when the accessory
+  //feedback below is enabled
+  //int adr = ((Address * 4) + ((data & 0x01) * 2));
   byte pos = data << 4;
   bitWrite(pos, 7, 1);  //command completed!
 /*  
