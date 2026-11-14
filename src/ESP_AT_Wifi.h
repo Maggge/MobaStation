@@ -26,31 +26,8 @@
 #include "Eth_Interface.h"
 #include "WiFiUdp.h"
 
-//WiFi of the example sketch
-//accesspoint (router) the station connects to, empty = the one stored in the ESP
-#ifndef WIFI_SSID
-#define WIFI_SSID ""
-#endif
-#ifndef WIFI_PWD
-#define WIFI_PWD ""
-#endif
-//Station_Mode, SoftAP_Mode or Hybrid_MODE (station, own accesspoint as fallback)
-#ifndef WIFI_MODE
-#define WIFI_MODE Hybrid_MODE
-#endif
-//serial port of the ESP8266, Serial3 on the Mega WiFi R3 boards
-#ifndef WIFI_SERIAL
-#define WIFI_SERIAL Serial3
-#endif
-
-//accesspoint of the SoftAP mode and of the hybrid fallback,
-//set your own password in MobaStationConfig.h, everybody knows this one
-#ifndef WIFI_AP_SSID
-#define WIFI_AP_SSID "MobaStation"
-#endif
-#ifndef WIFI_AP_PWD
-#define WIFI_AP_PWD "MobaStation"
-#endif
+//WIFI_SSID, WIFI_PWD, WIFI_MODE, WIFI_SERIAL, WIFI_AP_SSID, WIFI_AP_PWD
+#include "MobaStationWiFiConfig.h"
 
 class ESP_AT_Wifi : public Eth_Interface {
 private:

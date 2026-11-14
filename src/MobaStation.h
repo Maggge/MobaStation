@@ -206,6 +206,16 @@ enum TurnoutMode{
 };
 
 
+/**
+ * Gets what the command station has to tell a management interface (the web interface
+ * of the ESP firmware): answers of MobaBus modules.
+ */
+class MobaStation_Management{
+public:
+    virtual void cvResult(uint16_t address, uint16_t cv, uint8_t value, uint8_t status) = 0;
+    virtual void moduleFound(uint8_t type, uint16_t address, uint8_t typeId, uint8_t channels, uint8_t slot, uint8_t version) = 0;
+};
+
 class MobaStation
 {
 private:
@@ -277,6 +287,12 @@ private:
     //switch the track power, notifyXNet = false when the change came from the XpressNet
     static void applyRailPower(bool power, IPAddress *client, bool notifyXNet);
     static void emergencyStop(IPAddress *client, bool notifyXNet);
+
+    static MobaStation_Management *management;
+    static bool powerOnStart;
+    static uint16_t loopTime;
+    static void loadSettings();
+    static void saveSettings();
     static void checkShortCircuit();
 
     static uint8_t getLocoInfo(uint16_t addr, uint8_t *data);
@@ -372,6 +388,34 @@ public:
     static void setTurnoutMode(TurnoutMode mode, uint16_t addrRange = 2047);
 
     static void setVoltageMultiplier(float multi);
+
+    //---------- management (web interface of the ESP firmware) ----------
+    static void setManagement(MobaStation_Management *m);
+
+    static uint8_t getRailState();
+    static int16_t getMainCurrent();
+    static int16_t getProgCurrent();
+    static uint16_t getVoltage();
+    static uint8_t getClientCount();
+    static uint16_t getLoopTime();          //mean time of one loop in us
+    static uint16_t getFreeRam();           //lowest free RAM since the start
+
+    /**
+     * Runtime settings (EspLinkSetting keys of EspLinkProtocol.h): turnout mode, DCC range,
+     * voltage multiplier * 1000, track power after the start. setSetting() stores them in
+     * the EEPROM, they win over the sketch and MobaStationConfig.h until resetSettings()
+     */
+    static bool getSetting(uint8_t key, int32_t &value);
+    static bool setSetting(uint8_t key, int32_t value);
+    static void resetSettings();
+
+    //CV of a MobaBus module, the answer comes to the management with cvResult()
+    //@return false if the address is not a MobaBus turnout
+    static bool requestCv(uint16_t address, uint16_t cv, bool write, uint8_t value);
+    //all MobaBus modules answer to the management with moduleFound()
+    static void discoverModules();
+    //emergency stop of all locos, the track power stays on
+    static void stopAll();
 
 };
 

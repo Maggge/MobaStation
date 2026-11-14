@@ -13,5 +13,6 @@ class MobaBus { public:
   bool loop(MobaBus_Packet *p){ if(rx.empty()) return false; *p = rx.front(); rx.pop_front(); return true; }
   uint8_t sendPkg(MobaDevType t, uint16_t a, MobaCmd c, uint8_t len, uint8_t *d){
     MobaBus_Packet p; p.meta = {t, a, 0, c}; p.len = len; for(int i = 0; i < len; i++) p.data[i] = d[i]; sent.push_back(p); return 0; }
+  int discovers = 0; void discover(){ discovers++; }
   void push(MobaDevType t, uint16_t a, MobaCmd c, std::vector<uint8_t> d){
     MobaBus_Packet p; p.meta = {t, a, 0, c}; p.len = d.size(); for(size_t i = 0; i < d.size(); i++) p.data[i] = d[i]; rx.push_back(p); } };

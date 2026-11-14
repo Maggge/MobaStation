@@ -23,6 +23,7 @@ public:
   int available(){ return in.size(); }
   int read(){ if(in.empty()) return -1; int c = in.front(); in.pop_front(); return c; }
   size_t write(uint8_t c){ out += (char)c; return 1; }
+  size_t write(const uint8_t *b, size_t n){ out.append((const char*)b, n); return n; }
   void print(const char *s){ out += s; }
   void print(const __FlashStringHelper *s){ out += (const char*)s; }
   void print(char c){ out += c; }

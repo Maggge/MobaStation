@@ -23,6 +23,8 @@
 
 #include "Eth_Adapter.h"
 #include "ESP_AT_Wifi.h"
+#include "esplink/EspLinkProtocol.h"
+#include "freeMemory.h"
 
 //------------- Variables -----------------
 
@@ -33,6 +35,9 @@ void (*MobaStation::broadcastEventHandler)(uint16_t DataLen, uint16_t Header, by
 MobaBus *MobaStation::mobaBus;
 
 XpressNetMasterClass *MobaStation::XpressNet;
+MobaStation_Management *MobaStation::management;
+bool MobaStation::powerOnStart;
+uint16_t MobaStation::loopTime;
 IPAddress MobaStation::pomClient;
 bool MobaStation::pomPending;
 bool MobaStation::pomBitWrite;
@@ -156,7 +161,9 @@ void MobaStation::begin(const FSH * motorShieldName, MotorDriver *mainDriver, Mo
   pinMode(POWER_LED, OUTPUT);
   digitalWrite(POWER_LED, LOW);
 
-  setRailPower(false);
+  //settings of the web interface win over the sketch and MobaStationConfig.h
+  loadSettings();
+  setRailPower(powerOnStart);
 }
 
 void MobaStation::attachMobaBus(MobaBus *m){
@@ -221,6 +228,18 @@ static void loopStats(){
 
 void MobaStation::loop(){
   uint32_t currentTime = millis();
+
+  {
+    //mean loop time for the status of the web interface (moving average over ~16 loops)
+    static uint32_t lastMicros = 0;
+    uint32_t now = micros();
+    if(lastMicros != 0){
+      uint32_t d = now - lastMicros;
+      if(d > 60000) d = 60000;
+      loopTime = loopTime + ((int32_t)d - (int32_t)loopTime) / 16;
+    }
+    lastMicros = now;
+  }
 
   #ifdef MOBASTATION_LOOP_STATS
   loopStats();
@@ -327,6 +346,12 @@ void MobaStation::processMobaBus(){
     #endif
     if(pkg.meta.cmd == CONFIG_INFO){
       mobaBusConfigInfo(&pkg);
+      return;
+    }
+    if(pkg.meta.cmd == ANNOUNCE){
+      if(management != NULL && pkg.len >= 4){
+        management->moduleFound(pkg.meta.type, pkg.meta.address, pkg.data[0], pkg.data[1], pkg.data[2], pkg.data[3]);
+      }
       return;
     }
     if(pkg.meta.cmd != INFO) return;
@@ -1005,6 +1030,9 @@ void MobaStation::mobaBusConfigInfo(MobaBus_Packet *pkg){
   uint16_t cv = ((uint16_t)pkg->data[0] << 8) | pkg->data[1];
   uint8_t value = pkg->data[2];
   bool ok = pkg->data[3] == CV_OK;
+  if(management != NULL){
+    management->cvResult(pkg->meta.address, cv, value, pkg->data[3]);
+  }
   #ifdef DEBUG
   Serial.print(F("MobaBus CV"));
   Serial.print(cv);
@@ -1832,4 +1860,110 @@ void notifyXNetPOMwriteBit(uint16_t Adr, uint16_t CV, uint8_t data){
   uint8_t bitNum = data & B00000111;
   bool value = bitRead(data, 3);
   DCC::writeCVBitMain(Adr, CV, bitNum, value);
+}
+
+//----------   management (web interface of the ESP firmware)   ----------
+
+void MobaStation::setManagement(MobaStation_Management *m){
+  management = m;
+}
+
+uint8_t MobaStation::getRailState(){ return railState; }
+int16_t MobaStation::getMainCurrent(){ return DCCWaveform::mainTrack.getCurrentmA(); }
+int16_t MobaStation::getProgCurrent(){ return DCCWaveform::progTrack.getCurrentmA(); }
+uint16_t MobaStation::getVoltage(){ return (uint16_t)((float)analogRead(VOLTAGE_SENSE_PIN) * voltageMulti); }
+uint16_t MobaStation::getLoopTime(){ return loopTime; }
+
+uint8_t MobaStation::getClientCount(){
+  uint8_t n = 0;
+  for(uint8_t i = 0; i < z21clientMAX; i++){
+    if(z21Clients[i].time > 0) n++;
+  }
+  return n;
+}
+
+uint16_t MobaStation::getFreeRam(){
+  //lowest free RAM since the start, the DCC interrupt keeps it up to date
+  return minimumFreeMemory();
+}
+
+//EEPROM: CONFIG_STORAGE + 16: magic, version, turnout mode, DCC range u16,
+//voltage multiplier * 1000 u16, track power after the start
+#define SETTINGS_ADDR (CONFIG_STORAGE + 16)
+#define SETTINGS_MAGIC 0xA7
+
+void MobaStation::loadSettings(){
+  if(FSTORAGE.read(SETTINGS_ADDR) != SETTINGS_MAGIC || FSTORAGE.read(SETTINGS_ADDR + 1) != 1) return;
+  uint8_t mode = FSTORAGE.read(SETTINGS_ADDR + 2);
+  if(mode <= Combined) turnoutMode = (TurnoutMode)mode;
+  dccAddrRange = FSTORAGE.read(SETTINGS_ADDR + 3) | (FSTORAGE.read(SETTINGS_ADDR + 4) << 8);
+  uint16_t multi = FSTORAGE.read(SETTINGS_ADDR + 5) | (FSTORAGE.read(SETTINGS_ADDR + 6) << 8);
+  if(multi > 0) voltageMulti = multi / 1000.0f;
+  powerOnStart = FSTORAGE.read(SETTINGS_ADDR + 7) == 1;
+}
+
+void MobaStation::saveSettings(){
+  uint16_t multi = (uint16_t)(voltageMulti * 1000.0f + 0.5f);
+  FSTORAGE.FSTORAGEMODE(SETTINGS_ADDR, SETTINGS_MAGIC);
+  FSTORAGE.FSTORAGEMODE(SETTINGS_ADDR + 1, 1);
+  FSTORAGE.FSTORAGEMODE(SETTINGS_ADDR + 2, (uint8_t)turnoutMode);
+  FSTORAGE.FSTORAGEMODE(SETTINGS_ADDR + 3, dccAddrRange & 0xFF);
+  FSTORAGE.FSTORAGEMODE(SETTINGS_ADDR + 4, dccAddrRange >> 8);
+  FSTORAGE.FSTORAGEMODE(SETTINGS_ADDR + 5, multi & 0xFF);
+  FSTORAGE.FSTORAGEMODE(SETTINGS_ADDR + 6, multi >> 8);
+  FSTORAGE.FSTORAGEMODE(SETTINGS_ADDR + 7, powerOnStart ? 1 : 0);
+}
+
+void MobaStation::resetSettings(){
+  FSTORAGE.FSTORAGEMODE(SETTINGS_ADDR, 0);
+}
+
+bool MobaStation::getSetting(uint8_t key, int32_t &value){
+  switch(key){
+    case SETTING_TURNOUT_MODE:   value = turnoutMode; return true;
+    case SETTING_DCC_RANGE:      value = dccAddrRange; return true;
+    case SETTING_VOLTAGE_MULTI:  value = (int32_t)(voltageMulti * 1000.0f + 0.5f); return true;
+    case SETTING_POWER_ON_START: value = powerOnStart; return true;
+  }
+  return false;
+}
+
+bool MobaStation::setSetting(uint8_t key, int32_t value){
+  switch(key){
+    case SETTING_TURNOUT_MODE:
+      if(value < MobaBus_Only || value > Combined) return false;
+      turnoutMode = (TurnoutMode)value;
+      break;
+    case SETTING_DCC_RANGE:
+      if(value < 0 || value > 2047) return false;
+      dccAddrRange = value;
+      break;
+    case SETTING_VOLTAGE_MULTI:
+      if(value < 1 || value > 65535) return false;
+      voltageMulti = value / 1000.0f;
+      break;
+    case SETTING_POWER_ON_START:
+      if(value != 0 && value != 1) return false;
+      powerOnStart = value;
+      break;
+    default:
+      return false;
+  }
+  saveSettings();
+  return true;
+}
+
+bool MobaStation::requestCv(uint16_t address, uint16_t cv, bool write, uint8_t value){
+  if(!isMobaBusTurnout(address)) return false;
+  uint8_t data[3] = {(uint8_t)(cv >> 8), (uint8_t)cv, value};
+  mobaBus->sendPkg(ACCESSORIE, address, write ? CONFIG_WRITE : CONFIG_READ, write ? 3 : 2, data);
+  return true;
+}
+
+void MobaStation::discoverModules(){
+  if(mobaBus != NULL) mobaBus->discover();
+}
+
+void MobaStation::stopAll(){
+  emergencyStop(NULL, true);
 }

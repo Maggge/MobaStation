@@ -11,9 +11,12 @@
 #ifndef __MOBASTATION_USER_CONFIG__
 #define __MOBASTATION_USER_CONFIG__
 
+//the sources are in src/, the user configuration stays in the library folder
 #if defined(__has_include)
 #  if __has_include("MobaStationConfig.h")
 #    include "MobaStationConfig.h"
+#  elif __has_include("../MobaStationConfig.h")
+#    include "../MobaStationConfig.h"
 #  endif
 #endif
 

@@ -22,6 +22,24 @@ jobs:
       - name: Run host tests
         run: make test
 
+  esp-firmware:
+    name: ESP8266 firmware
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install arduino-cli
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR="$HOME/bin" sh
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+      - name: Install ESP8266 core and libraries
+        run: make esp-setup
+
+      - name: Compile
+        run: make esp-build
+
   compile:
     name: ${{ matrix.example }}
     runs-on: ubuntu-latest

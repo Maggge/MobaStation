@@ -65,6 +65,30 @@ The CVs are described in the README of MobaBus.
 without CAN bus. `make upload EXTRA_FLAGS=-DMOBASTATION_LOOP_STATS` prints the loop time every 10 seconds.
 `extras/z21test.py IP info|power on|loco 3 40|turnout 5 1|listen` sends single Z21 commands.
 
+<h3>ESP8266 firmware with web interface</h3>
+
+Instead of the AT firmware the ESP8266 of a Mega + WiFi R3 board can run its own firmware
+(`extras/esp/MobaStationESP`, Mega sketch `examples/MobaStationESP`). The ESP does WiFi, the Z21 UDP port and a web
+interface, the Mega exchanges Z21 packets with it in short frames over Serial3 instead of AT commands. This saves
+about 2 KB of RAM on the Mega and the AT handshake for every packet.
+
+The web interface (address of MobaStation in the browser) shows the track state, currents and voltage, switches
+the track power and turnouts, changes the settings of the command station, finds MobaBus modules and reads and writes
+their CVs, configures the WiFi and updates the ESP firmware. WiFi settings saved there win over MobaStationConfig.h,
+without router the ESP opens its own access point (`WIFI_AP_SSID`, captive portal).
+
+```
+make esp-setup                 # once: ESP8266 core and libraries
+# DIP switches 5-7 ON, others OFF, unplug and plug in the board
+make esp-info                  # check chip and flash size (4 MB)
+make esp-backup                # save the AT firmware to extras/esp/backup
+make esp-upload                # flash the MobaStation ESP firmware
+# DIP switches 1-4 ON, 5-8 OFF, unplug and plug in the board
+make upload SKETCH=examples/MobaStationESP
+make esp-ota                   # later updates of the ESP over WiFi
+make esp-restore BACKUP=extras/esp/backup/<file>.bin   # back to the AT firmware
+```
+
 The <a href=https://github.com/Maggge/MobaStation/releases>releases</a> contain prebuild firmware plus the Config Tool,
 so building it yourself is only needed if you want to modify something.
 

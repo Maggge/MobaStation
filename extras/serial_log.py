@@ -4,7 +4,9 @@
   serial_log.py [PORT] [SECONDS] [BAUD] [noreset]     defaults: /dev/ttyUSB0 20 115200
 
 The board is reset with a DTR pulse (like the auto reset of the IDE), so the log starts with
-the boot messages. "noreset" only listens to a running board.
+the boot messages. "noreset" (anywhere in the arguments) listens to a running board: it does
+not pulse DTR and leaves DTR on when it ends. Linux sets DTR when a port is opened, so the
+board is only left running if the port was closed with DTR on before (a previous noreset run).
 For an interactive console use "make monitor" (arduino-cli monitor).
 """
 import fcntl
@@ -19,10 +21,11 @@ BAUDS = {9600: termios.B9600, 57600: termios.B57600, 115200: termios.B115200}
 
 
 def main():
-    port = sys.argv[1] if len(sys.argv) > 1 else '/dev/ttyUSB0'
-    seconds = float(sys.argv[2]) if len(sys.argv) > 2 else 20
-    baud = BAUDS[int(sys.argv[3]) if len(sys.argv) > 3 else 115200]
-    reset = not (len(sys.argv) > 4 and sys.argv[4] == 'noreset')
+    args = [a for a in sys.argv[1:] if a != 'noreset']
+    reset = 'noreset' not in sys.argv[1:]
+    port = args[0] if len(args) > 0 else '/dev/ttyUSB0'
+    seconds = float(args[1]) if len(args) > 1 else 20
+    baud = BAUDS[int(args[2]) if len(args) > 2 else 115200]
 
     fd = os.open(port, os.O_RDONLY | os.O_NOCTTY | os.O_NONBLOCK)
     try:
@@ -30,7 +33,7 @@ def main():
         attrs[0] = 0                                        # iflag: raw
         attrs[1] = 0                                        # oflag
         #HUPCL: DTR drops when the port is closed, the next open resets the board again
-        attrs[2] = termios.CS8 | termios.CREAD | termios.CLOCAL | termios.HUPCL
+        attrs[2] = termios.CS8 | termios.CREAD | termios.CLOCAL | (termios.HUPCL if reset else 0)
         attrs[3] = 0                                        # lflag: no echo, not canonical
         attrs[4] = attrs[5] = baud
         termios.tcsetattr(fd, termios.TCSANOW, attrs)

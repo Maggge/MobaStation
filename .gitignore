@@ -6,6 +6,11 @@ MobaStationConfig.h
 extras/test/ms_test
 extras/test/wifi_test
 extras/test/eth_test
+extras/test/esplink_test
+extras/test/esp_link_mega_test
+
+# flash backups of the ESP (make esp-backup)
+extras/esp/backup/
 
 # Arduino / arduino-cli build output
 build/
