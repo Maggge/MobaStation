@@ -27,7 +27,7 @@ and everything else is set up in the web interface.
 |---|---|
 | Arduino Mega 2560 with ESP8266 | Either a Mega + WiFi R3 board (eg. Wemos/RobotDyn "Mega2560 + ESP8266"), or a normal Mega with a separate ESP8266 board. A Wemos D1 mini or a NodeMCU is best: 4 MB flash and a USB port to flash it. |
 | Arduino Motor Shield Rev3 | Channel A drives the main track, channel B the programming track. |
-| Power supply | 12-15 V DC for the track. |
+| Power supply | 12-18 V DC for the track. |
 | MCP2515 CAN module, 8 MHz crystal | Optional, for MobaBus. |
 | MAX485 RS485 module | Optional, for XpressNet. |
 | Push button with LED | Optional, switches the track power. |
