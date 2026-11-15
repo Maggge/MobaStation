@@ -75,46 +75,80 @@ The STL files of the housing are in [Housing](Housing). `Cover_Xpress.stl` has a
 
 ## Flashing
 
-Both the Mega and the ESP get a firmware, and neither has a configuration file. Use one of these ways:
+Both the Mega and the ESP8266 get a firmware, and nothing has to be configured before. The ready-made files are
+attached to every [release](https://github.com/Maggge/MobaStation/releases/latest):
 
-- **Ready-made firmware:** download `MobaStation-Mega.hex` and `MobaStation-ESP8266.bin` from the
-  [releases](https://github.com/Maggge/MobaStation/releases).
-- **Build it yourself:** with arduino-cli and make, see [Building it yourself](#building-it-yourself).
+| File | For |
+|---|---|
+| `MobaStation-Mega.hex` | Arduino Mega 2560, also the Mega of a Mega + WiFi R3 board |
+| `MobaStation-ESP8266.bin` | ESP8266 with 4 MB flash: the ESP of a Mega + WiFi R3 board, Wemos D1 mini, NodeMCU |
 
-**Mega.** Connect the Mega by USB. On a Mega + WiFi R3 board, leave the DIP switches in the normal position (1-4 ON).
+To build them yourself instead, see [Building it yourself](#building-it-yourself).
+
+### Tools
+
+- **avrdude** for the Mega. Linux: `sudo apt install avrdude` or `sudo dnf install avrdude`. macOS:
+  `brew install avrdude`. Windows: unpack `avrdude-…-windows-x64.zip` from the
+  [avrdude releases](https://github.com/avrdudes/avrdude/releases).
+- **esptool** for the ESP: `pip install esptool` (Python 3). Without installing anything, the
+  [ESP web flasher](#esp-web-flasher) in Chrome or Edge works too.
+
+Replace `PORT` in the commands with the serial port of the board: `/dev/ttyUSB0` or `/dev/ttyACM0` on Linux,
+`/dev/cu.usbserial-…` on macOS, `COM3`, `COM4`, … on Windows (see the Device Manager).
+
+### Mega
+
+Connect the Mega by USB. On a Mega + WiFi R3 board the DIP switches stay in the normal position: 1-4 ON, 5-8 OFF.
 
 ```
-avrdude -p atmega2560 -c wiring -P /dev/ttyUSB0 -b 115200 -D -U flash:w:MobaStation-Mega.hex:i
-# or, built yourself:
-make upload PORT=/dev/ttyUSB0
+avrdude -p atmega2560 -c wiring -P PORT -b 115200 -D -U flash:w:MobaStation-Mega.hex:i
 ```
 
-**ESP8266 on a Mega + WiFi R3 board.**
+avrdude ends with "… bytes of flash verified".
 
-1. Set DIP switches 5, 6 and 7 ON and all others OFF, then unplug the board and plug it in again. The ESP now waits in
-   its boot loader.
+### ESP8266 on a Mega + WiFi R3 board
+
+The ESP is flashed through the USB port of the board.
+
+1. Set DIP switches 5, 6 and 7 ON and all others OFF. Unplug the board and plug it in again: the ESP now waits in its
+   boot loader.
 2. Flash it:
 
    ```
-   esptool --port /dev/ttyUSB0 --baud 460800 --before no_reset --after no_reset write_flash 0x0 MobaStation-ESP8266.bin
-   # or, built yourself:
-   make esp-upload PORT=/dev/ttyUSB0
+   esptool --port PORT --baud 460800 --before no-reset --after no-reset write-flash --erase-all 0x0 MobaStation-ESP8266.bin
    ```
 
-3. Set DIP switches 1-4 ON and 5-8 OFF again, then unplug the board and plug it in again.
+   `--erase-all` clears everything on the ESP first, eg. the AT firmware the board comes with. Leave it out for an
+   update that should keep the WiFi settings.
+3. Set DIP switches 1-4 ON and 5-8 OFF again. Unplug the board and plug it in again.
 
-**Separate ESP8266 (D1 mini, NodeMCU).** Disconnect it from the Mega and flash it through its own USB port:
+### Separate ESP8266 (D1 mini, NodeMCU)
+
+Disconnect it from the Mega and connect it by its own USB port. It switches into its boot loader by itself:
 
 ```
-esptool --port /dev/ttyUSB1 --baud 460800 write_flash 0x0 MobaStation-ESP8266.bin
-# or, built yourself:
-make esp-upload PORT=/dev/ttyUSB1 ESP_BEFORE=default-reset ESP_AFTER=hard-reset
+esptool --port PORT --baud 460800 write-flash --erase-all 0x0 MobaStation-ESP8266.bin
 ```
 
-On Windows the ports are called COM3, COM4, … . Instead of esptool you can also flash the ESP from Chrome with the
-[ESP web flasher](https://espressif.github.io/esptool-js/): write the .bin file at address 0x0.
+Then connect it to the Mega again, see [Wiring](#wiring).
 
-Later updates of the ESP don't need a cable: use the page "System" of the web interface, or run `make esp-ota`.
+### ESP web flasher
+
+Instead of esptool, open the [ESP web flasher](https://espressif.github.io/esptool-js/) in Chrome or Edge:
+
+1. On a Mega + WiFi R3 board, set the DIP switches as in step 1 above first.
+2. Baudrate 460800, "Connect", choose the port.
+3. "Erase Flash" for a clean start (deletes the WiFi settings).
+4. Flash address `0x0`, choose `MobaStation-ESP8266.bin`, "Program".
+5. On a Mega + WiFi R3 board, set the DIP switches back as in step 3 above.
+
+### Updates
+
+- **ESP:** no cable needed. On the page System of the web interface, choose the new `MobaStation-ESP8266.bin` and
+  press "Update". The WiFi settings stay.
+- **Mega:** flash the new `MobaStation-Mega.hex` as above. The settings in its EEPROM stay.
+
+The firmware version is shown on the page System.
 
 ## First start
 
@@ -180,7 +214,8 @@ checkouts next to this repository (`../DCC`, `../MobaBus`):
 make setup                     # AVR core and libraries, clones DCC and MobaBus
 make esp-setup                 # ESP8266 core and libraries
 make build / make upload       # Mega (PORT=/dev/ttyUSB0)
-make esp-build / esp-upload    # ESP, esp-ota updates it over WiFi (ESP_IP=...)
+make esp-build / esp-upload    # ESP on a Mega + WiFi R3 board (DIP 5-7 ON), esp-ota updates it over WiFi (ESP_IP=...)
+make esp-upload PORT=/dev/ttyUSB1 ESP_BEFORE=default-reset ESP_AFTER=hard-reset   # separate ESP (D1 mini)
 make monitor                   # serial console of the Mega
 make log                       # serial output of the first 20 seconds after a reset
 make test                      # host tests on the PC, no board needed

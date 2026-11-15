@@ -102,6 +102,18 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
+          generate_release_notes: true
+          body: |
+            Firmware for the standard build: Arduino Mega 2560 + Arduino Motor Shield + ESP8266.
+
+            | File | For |
+            |---|---|
+            | `MobaStation-Mega.hex` | Arduino Mega 2560, also the Mega of a Mega + WiFi R3 board |
+            | `MobaStation-ESP8266.bin` | ESP8266 with 4 MB flash: Mega + WiFi R3 board, Wemos D1 mini, NodeMCU |
+
+            How to flash both: [README, Flashing](https://github.com/Maggge/MobaStation#flashing).
+            After the first start the station opens the WiFi access point "MobaStation" (password "MobaStation"),
+            everything else is set up in the web interface at http://192.168.0.111.
           files: |
             MobaStation-Mega.hex
             MobaStation-ESP8266.bin
