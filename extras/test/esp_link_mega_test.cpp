@@ -43,27 +43,22 @@ static const Frame *find(const std::vector<Frame> &f, uint8_t type, int key = -1
 int main(){
   HardwareSerial esp;
   MobaBus mbus;
-  ESP_Link link(&esp, "home", "secret", Hybrid_MODE, "MobaStation", "appass12");
+  ESP_Link link(&esp);
   MobaStation::attachMobaBus(&mbus);
   MobaStation::attachEthInterface(&link);
   MobaStation::begin(F("x"), nullptr, nullptr, false);
 
-  // after begin: HELLO and the network defaults of the sketch
+  // after begin: only the HELLO, the network settings live on the ESP
   auto f = written(esp);
   CHECK(find(f, ESPLINK_HELLO) && find(f, ESPLINK_HELLO)->d[1] == ESPLINK_ROLE_MEGA, "HELLO of the Mega");
-  auto ssid = find(f, ESPLINK_NET_DEFAULT, ESPLINK_NETDEF_SSID);
-  CHECK(ssid && std::string(ssid->d.begin() + 1, ssid->d.end()) == "home", "ssid default");
-  auto ip = find(f, ESPLINK_NET_DEFAULT, ESPLINK_NETDEF_IP);
-  CHECK(ip && ip->d[1] == NETWORK_DHCP && ip->d[2] == IPAddress(NETWORK_IP)[0] && ip->d[13] == 1, "ip defaults (gateway .1)");
-  CHECK(find(f, ESPLINK_NET_DEFAULT, ESPLINK_NETDEF_MODE)->d[1] == Hybrid_MODE && find(f, ESPLINK_NET_DEFAULT, ESPLINK_NETDEF_DONE), "mode and done");
+  CHECK(f.size() == 1, "nothing but the HELLO (%zu frames)", f.size());
   CHECK(!link.linkUp(), "link down until the ESP answers");
 
   CHECK(find(f, ESPLINK_HELLO)->d[2] == 1, "start HELLO asks for an answer");
-  // the ESP boots: HELLO with request -> HELLO without request + defaults again
+  // the ESP boots: HELLO with request -> HELLO without request
   espSends(esp, ESPLINK_HELLO, {ESP_LINK_VERSION, ESPLINK_ROLE_ESP, 1}); MobaStation::loop();
   f = written(esp);
-  CHECK(link.linkUp() && find(f, ESPLINK_HELLO) && find(f, ESPLINK_HELLO)->d[2] == 0 && find(f, ESPLINK_NET_DEFAULT, ESPLINK_NETDEF_DONE),
-        "ESP found, answer without request, defaults sent again");
+  CHECK(link.linkUp() && find(f, ESPLINK_HELLO) && find(f, ESPLINK_HELLO)->d[2] == 0, "ESP found, answer without request");
   // the answer of the ESP to our start HELLO is not answered again
   espSends(esp, ESPLINK_HELLO, {ESP_LINK_VERSION, ESPLINK_ROLE_ESP, 0}); MobaStation::loop();
   f = written(esp);
@@ -156,7 +151,7 @@ int main(){
   { std::string boot(200, '\x55'); esp.push(boot); esp.push(std::string(1, '\0'));
     espSends(esp, ESPLINK_HELLO, {ESP_LINK_VERSION, ESPLINK_ROLE_ESP, 1}); MobaStation::loop();
     f = written(esp);
-    CHECK(find(f, ESPLINK_NET_DEFAULT, ESPLINK_NETDEF_DONE), "HELLO after boot garbage answered with the defaults"); }
+    CHECK(find(f, ESPLINK_HELLO) && find(f, ESPLINK_HELLO)->d[2] == 0, "HELLO after boot garbage answered"); }
   CHECK(esp.out.empty(), "output consumed");
 
   // noise on the line does not stop the link

@@ -1,8 +1,8 @@
 /*
   MobaStation ESP firmware
 
-  Runs on the ESP8266 of a Mega + WiFi R3 board (or an ESP-01 at Serial3 of the Mega) instead
-  of the AT firmware: WiFi, the UDP port of the Z21 protocol and a web interface. The Mega
+  Runs on the ESP8266 of a Mega + WiFi R3 board or on a separate ESP8266 (Wemos D1 mini, NodeMCU,
+  ESP-01) at Serial3 of the Mega: WiFi, the UDP port of the Z21 protocol and a web interface. The Mega
   (examples/MobaStationESP) stays the command station, both talk over the serial line in
   frames of EspLinkProtocol.h.
 
@@ -28,15 +28,18 @@
 #include "EspLinkProtocol.h"    //src/esplink of MobaStation, added to the include path by the Makefile
 #include "NetConfig.h"
 #include "WebPage.h"
+//make esp-build generates the gzip compressed page (extras/esp/gzip_page.py), the Arduino IDE serves the plain one
+#if __has_include(<WebPageGz.h>)
+#include <WebPageGz.h>
+#endif
 
-#define FIRMWARE_VERSION "1.4.0"
+#define FIRMWARE_VERSION "1.6.0"
 #define MAX_MODULES_LIST 32
 //the Z21 data of one datagram, longer packets are cut (the Mega handles 64 bytes)
 #define UDP_MAX 64
 
-NetConfig cfg;              //active settings
-NetConfig megaCfg;          //defaults of the Mega (MobaStationConfig.h)
-bool megaCfgDone = false;
+NetConfig cfg;              //active settings: /net.json or the defaults of NetConfig.h
+bool megaAnswered = false;  //the Mega answered our HELLO
 
 WiFiUDP udp;
 DNSServer dns;
@@ -62,7 +65,6 @@ BoardInfo boards[MAX_BOARDS_LIST];
 uint8_t boardCount = 0;
 
 bool apOn = false;
-bool wifiStarted = false;
 uint32_t staLostSince = 0;
 uint32_t staUpSince = 0;
 uint32_t restartAt = 0;
@@ -118,25 +120,6 @@ String textOf(const uint8_t *d, uint8_t len){
     String s;
     for(uint8_t i = 0; i < len; i++) s += (char)d[i];
     return s;
-}
-
-void startWiFi();
-
-//the Mega sent its defaults: used as long as nothing was saved in the web interface
-void megaDefaultsComplete(){
-    megaCfgDone = true;
-    if(cfg.saved) return;
-    if(!wifiStarted){
-        cfg = megaCfg;          //still in setup(), the WiFi starts with these settings
-        cfg.saved = false;
-        return;
-    }
-    if(!megaCfg.sameNetwork(cfg)){
-        cfg = megaCfg;
-        cfg.saved = false;
-        wsLog(F("Netzwerk-Einstellungen der Zentrale übernommen"));
-        startWiFi();
-    }
 }
 
 void pushStatus(){
@@ -311,6 +294,7 @@ void handleFrame(){
             if(len >= 2 && d[1] == ESPLINK_ROLE_MEGA){
                 if(!megaSeen) wsLog(F("Zentrale verbunden"));
                 megaSeen = true;
+                megaAnswered = true;
                 if(len >= 3 && d[2]){
                     sendHello(false);
                     //the Mega restarted and lost its clients: subscribe again
@@ -321,29 +305,6 @@ void handleFrame(){
         case ESPLINK_HEARTBEAT:
             megaSeen = true;
             break;
-        case ESPLINK_NET_DEFAULT:{
-            if(len < 1) break;
-            const uint8_t *v = d + 1;
-            uint8_t n = len - 1;
-            switch(d[0]){
-                case ESPLINK_NETDEF_SSID: megaCfgDone = false; megaCfg.ssid = textOf(v, n); break;
-                case ESPLINK_NETDEF_PWD: megaCfg.pwd = textOf(v, n); break;
-                case ESPLINK_NETDEF_AP_SSID: if(n) megaCfg.apSsid = textOf(v, n); break;
-                case ESPLINK_NETDEF_AP_PWD: if(n) megaCfg.apPwd = textOf(v, n); break;
-                case ESPLINK_NETDEF_IP:
-                    if(n >= 13){
-                        megaCfg.dhcp = v[0];
-                        megaCfg.ip = IPAddress(v[1], v[2], v[3], v[4]);
-                        megaCfg.subnet = IPAddress(v[5], v[6], v[7], v[8]);
-                        megaCfg.gateway = IPAddress(v[9], v[10], v[11], v[12]);
-                    }
-                    break;
-                case ESPLINK_NETDEF_MODE: if(n >= 1) megaCfg.mode = constrain(v[0], 0, 2); break;
-                case ESPLINK_NETDEF_PORT: if(n >= 2) megaCfg.port = espLinkGet16(v); break;
-                case ESPLINK_NETDEF_DONE: megaDefaultsComplete(); break;
-            }
-            break;
-        }
         case ESPLINK_UDP_TX:
             if(len >= 6 && memcmp(d, WEB_CLIENT_IP, 4) == 0){
                 handleWebZ21(d + 6, len - 6);
@@ -438,8 +399,8 @@ void linkLoop(){
         lastBeat = now;
         sendFrame(ESPLINK_HEARTBEAT, NULL, 0);
         //the Mega may have missed our start (the HELLO right after the boot messages):
-        //ask again until its defaults arrived, its heartbeats alone are not enough
-        if(!megaCfgDone) sendHello(true);
+        //ask again until it answered, its heartbeats alone are not enough
+        if(!megaAnswered) sendHello(true);
         if(!megaLinkUp()) pushStatus();
     }
 }
@@ -472,6 +433,7 @@ void sendNetStatus(){
     j["ssid"] = cfg.ssid;
     j["apClients"] = apOn ? WiFi.softAPgetStationNum() : 0;
     j["saved"] = cfg.saved;
+    j["apPwdDefault"] = cfg.apPwd == AP_DEFAULT_PWD;
     j["heap"] = ESP.getFreeHeap();
     j["version"] = FIRMWARE_VERSION;
     wsSend(j);
@@ -499,8 +461,8 @@ void stopAP(){
 }
 
 void startWiFi(){
-    wifiStarted = true;
     WiFi.persistent(false);         //the settings are in /net.json, not in the flash of the SDK
+    WiFi.setSleepMode(WIFI_NONE_SLEEP); //no modem sleep: answers the web interface and Z21 apps without delay
     if(apOn){
         dns.stop();
         WiFi.softAPdisconnect(true);
@@ -665,18 +627,46 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
     }
 }
 
+//the request goes to the web interface itself, not to a foreign name of the captive portal DNS
+bool ownHost(const String &host){
+    String h = host;
+    int colon = h.indexOf(':');
+    if(colon >= 0) h.remove(colon);
+    h.toLowerCase();
+    return h.length() == 0 || h == cfg.ip.toString() || h == WiFi.localIP().toString()
+        || h == "mobastation.local" || h == "mobastation";
+}
+
+//the page: gzip compressed with an ETag, a reload only asks whether it changed
+void sendPage(AsyncWebServerRequest *r){
+#ifdef WEB_PAGE_ETAG
+    if(r->hasHeader("If-None-Match") && r->header("If-None-Match") == WEB_PAGE_ETAG){
+        AsyncWebServerResponse *res = r->beginResponse(304);
+        res->addHeader("ETag", WEB_PAGE_ETAG);
+        r->send(res);
+        return;
+    }
+    AsyncWebServerResponse *res = r->beginResponse(200, "text/html; charset=utf-8", WEB_PAGE_GZ, sizeof(WEB_PAGE_GZ));
+    res->addHeader("Content-Encoding", "gzip");
+    res->addHeader("ETag", WEB_PAGE_ETAG);
+    res->addHeader("Cache-Control", "no-cache");
+    r->send(res);
+#else
+    r->send(200, "text/html; charset=utf-8", WEB_PAGE);
+#endif
+}
+
 void setupWeb(){
     ws.onEvent(onWsEvent);
     server.addHandler(&ws);
 
-    server.on("/", HTTP_GET, [](AsyncWebServerRequest *r){
-        r->send_P(200, "text/html; charset=utf-8", WEB_PAGE);
-    });
+    server.on("/", HTTP_GET, sendPage);
+    //browsers ask for it on every page, the page has none
+    server.on("/favicon.ico", HTTP_GET, [](AsyncWebServerRequest *r){ r->send(204); });
 
     server.on("/api/config", HTTP_GET, [](AsyncWebServerRequest *r){
         JsonDocument d;
         configToJson(cfg, d["active"].to<JsonObject>(), false);
-        d["megaDefaults"] = megaCfgDone;
         String s;
         serializeJson(d, s);
         r->send(200, "application/json", s);
@@ -729,7 +719,7 @@ void setupWeb(){
 
     server.on("/api/config/reset", HTTP_POST, [](AsyncWebServerRequest *r){
         clearConfig();
-        r->send(200, "text/plain", "Einstellungen der Zentrale werden verwendet, Neustart");
+        r->send(200, "text/plain", "WLAN-Einstellungen gelöscht, Neustart als Access Point");
         restartAt = millis() + 1000;
     });
 
@@ -755,8 +745,15 @@ void setupWeb(){
         });
 
     server.onNotFound([](AsyncWebServerRequest *r){
-        //captive portal: phones open any address when they join the access point
-        if(apOn) r->redirect("http://" + cfg.ip.toString() + "/");
+        //captive portal: the DNS server points every name at us. A short redirect for foreign
+        //hosts (the connectivity checks of phones and laptops: /generate_204, /hotspot-detect.html,
+        ///connecttest.txt, ...) makes them show the login page with the web interface
+        if(apOn && !ownHost(r->host())){
+            AsyncWebServerResponse *res = r->beginResponse(302);
+            res->addHeader("Location", "http://" + cfg.ip.toString() + "/");
+            res->addHeader("Cache-Control", "no-store");
+            r->send(res);
+        }
         else r->send(404, "text/plain", "Nicht gefunden");
     });
 
@@ -776,17 +773,7 @@ void setup(){
     }
     loadConfig(cfg);
 
-    //ask the Mega for its defaults, they decide when nothing was saved
     sendHello(true);
-    if(!cfg.saved){
-        uint32_t start = millis();
-        while(!megaCfgDone && millis() - start < 3000){
-            while(Serial.available()){
-                if(link.feed(Serial.read())) handleFrame();
-            }
-            delay(1);
-        }
-    }
     startWiFi();
     setupWeb();
 

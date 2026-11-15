@@ -21,25 +21,16 @@
 
 #include "ESP_Link.h"
 
-ESP_Link::ESP_Link(HardwareSerial *serial, const char *ssid, const char *pwd, WiFiMode mode,
-                   const char *apSsid, const char *apPwd){
+ESP_Link::ESP_Link(HardwareSerial *serial){
     ser = serial;
-    this->ssid = ssid;
-    this->pwd = pwd;
-    this->mode = mode;
-    this->apSsid = apSsid;
-    this->apPwd = apPwd;
 }
 
-bool ESP_Link::begin(uint16_t port, const NetworkConfig &net){
+bool ESP_Link::begin(uint16_t port){
     this->port = port;
-    this->net = net;
     ser->begin(ESP_LINK_BAUD);
     MobaStation::setManagement(this);
     uint8_t hello[3] = {ESP_LINK_VERSION, ESPLINK_ROLE_MEGA, 1};
     sendFrame(ESPLINK_HELLO, hello, 3);
-    //the ESP may already run (only the Mega was reset), then it gets the defaults now
-    sendDefaults();
     Serial.println(F("ESP link started, waiting for the ESP"));
     return true;
 }
@@ -67,30 +58,6 @@ void ESP_Link::sendText(uint8_t type, uint8_t key, const char *text){
     d[n++] = key;
     while(text != NULL && *text && n < sizeof(d)) d[n++] = *text++;
     sendFrame(type, d, n);
-}
-
-void ESP_Link::sendDefaults(){
-    sendText(ESPLINK_NET_DEFAULT, ESPLINK_NETDEF_SSID, ssid);
-    sendText(ESPLINK_NET_DEFAULT, ESPLINK_NETDEF_PWD, pwd);
-    sendText(ESPLINK_NET_DEFAULT, ESPLINK_NETDEF_AP_SSID, apSsid);
-    sendText(ESPLINK_NET_DEFAULT, ESPLINK_NETDEF_AP_PWD, apPwd);
-    uint8_t ip[14];
-    ip[0] = ESPLINK_NETDEF_IP;
-    ip[1] = net.dhcp;
-    IPAddress gw = gatewayOf(net);
-    for(uint8_t i = 0; i < 4; i++){
-        ip[2 + i] = net.ip[i];
-        ip[6 + i] = net.subnet[i];
-        ip[10 + i] = gw[i];
-    }
-    sendFrame(ESPLINK_NET_DEFAULT, ip, 14);
-    uint8_t m[2] = {ESPLINK_NETDEF_MODE, mode};
-    sendFrame(ESPLINK_NET_DEFAULT, m, 2);
-    uint8_t p[3] = {ESPLINK_NETDEF_PORT, 0, 0};
-    espLinkPut16(p + 1, port);
-    sendFrame(ESPLINK_NET_DEFAULT, p, 3);
-    uint8_t done = ESPLINK_NETDEF_DONE;
-    sendFrame(ESPLINK_NET_DEFAULT, &done, 1);
 }
 
 void ESP_Link::sendStatus(){
@@ -154,10 +121,9 @@ bool ESP_Link::handleFrame(UdpPacket *pkg){
                 if(!espSeen) Serial.println(F("ESP link: ESP found"));
                 espSeen = true;
                 if(len >= 3 && d[2]){
-                    //the ESP started: answer and give it the defaults
+                    //the ESP started: answer, then it stops asking
                     uint8_t hello[3] = {ESP_LINK_VERSION, ESPLINK_ROLE_MEGA, 0};
                     sendFrame(ESPLINK_HELLO, hello, 3);
-                    sendDefaults();
                 }
             }
             return false;

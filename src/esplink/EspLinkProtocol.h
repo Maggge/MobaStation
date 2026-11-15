@@ -64,9 +64,8 @@ enum EspLinkType : uint8_t {
     ESPLINK_UDP_TX       = 0x11,    //Mega -> ESP: ip[4], port u16, Z21 data
     ESPLINK_STATUS       = 0x20,    //Mega -> ESP every second, see ESPLINK_STATUS_* offsets
     ESPLINK_NET_STATUS   = 0x21,    //ESP -> Mega: mode (ESPLINK_NET_*), ip[4], rssi i8
-    //Mega -> ESP after HELLO: key (ESPLINK_NETDEF_*), value. Settings of MobaStationConfig.h,
-    //the ESP uses them as long as nothing was saved in its web interface
-    ESPLINK_NET_DEFAULT  = 0x22,
+    //0x22 were the network defaults of the Mega (up to ESP firmware 1.4), the WiFi settings
+    //are only made in the web interface of the ESP now
     ESPLINK_SETTING_GET  = 0x30,    //ESP -> Mega: key (EspLinkSetting)
     ESPLINK_SETTING_SET  = 0x31,    //ESP -> Mega: key, value i32
     ESPLINK_SETTING      = 0x32,    //Mega -> ESP: key, value i32, status (0 = ok)
@@ -95,17 +94,6 @@ enum EspLinkRole : uint8_t {
     ESPLINK_ROLE_ESP  = 1,
 };
 
-enum EspLinkNetDefault : uint8_t {
-    ESPLINK_NETDEF_SSID     = 1,    //text
-    ESPLINK_NETDEF_PWD      = 2,    //text
-    ESPLINK_NETDEF_AP_SSID  = 3,    //text
-    ESPLINK_NETDEF_AP_PWD   = 4,    //text
-    ESPLINK_NETDEF_IP       = 5,    //dhcp u8, ip[4], subnet[4], gateway[4]
-    ESPLINK_NETDEF_MODE     = 6,    //0 station, 1 access point, 2 hybrid (access point as fallback)
-    ESPLINK_NETDEF_PORT     = 7,    //u16 Z21 port
-    ESPLINK_NETDEF_DONE     = 8,    //all defaults sent
-};
-
 enum EspLinkNetMode : uint8_t {
     ESPLINK_NET_DOWN    = 0,
     ESPLINK_NET_STATION = 1,    //connected to the router
@@ -126,7 +114,7 @@ enum EspLinkCommand : uint8_t {
     ESPLINK_CMD_POWER_ON        = 1,
     ESPLINK_CMD_EMERGENCY_STOP  = 2,
     ESPLINK_CMD_TURNOUT         = 3,    //address u16, direction
-    ESPLINK_CMD_RESET_SETTINGS  = 4,    //forget the stored settings, MobaStationConfig.h after the next start
+    ESPLINK_CMD_RESET_SETTINGS  = 4,    //forget the stored settings, the defaults after the next start
 };
 
 //data of ESPLINK_STATUS

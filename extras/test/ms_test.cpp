@@ -5,6 +5,8 @@
   tested too. The DCC library, the network interfaces and the Arduino functions are
   replaced by stubs in extras/test/stub, the stubs record what the station does.
 */
+//two interfaces: the answers must only go out over the one the client talks to
+#define ETH_INTERFACES 2
 #include "MobaStation.cpp"
 #include <vector>
 #include <string>
@@ -33,7 +35,7 @@ void DCC::writeCVBitMain(int a,int cv,uint8_t b,bool v){ dccLog.push_back("pombi
 struct Sent { IPAddress ip; uint16_t port; std::vector<uint8_t> d; };
 struct FakeIf : Eth_Interface {
   std::vector<Sent> sent; std::vector<UdpPacket> rx;
-  NetworkConfig cfg; bool begin(uint16_t, const NetworkConfig &n){ cfg = n; return true; }
+  uint16_t port = 0; bool begin(uint16_t p){ port = p; return true; }
   bool send(IPAddress c, uint16_t p, uint8_t *data){ sent.push_back({c, p, std::vector<uint8_t>(data, data + data[0])}); return true; }
   bool receivePacket(UdpPacket *pkg){ if(rx.empty()) return false; *pkg = rx.front(); rx.erase(rx.begin()); return true; }
 };
@@ -98,12 +100,10 @@ int main(){
   speedTests();
   FakeIf eth, wifi;
   XpressNetMasterClass xnet;
-  MobaStation::attachEthInterface(&eth);   // settings from the config
-  MobaStation::attachEthInterface(&wifi, IPAddress(10,0,0,5), 21105, IPAddress(255,0,0,0));
-  CHECK(eth.cfg.dhcp == (bool)NETWORK_DHCP && eth.cfg.ip == IPAddress(NETWORK_IP) && eth.cfg.subnet == IPAddress(NETWORK_SUBNET) && eth.cfg.gateway == IPAddress(NETWORK_GATEWAY), "config network settings");
-  CHECK(!wifi.cfg.dhcp && wifi.cfg.ip == IPAddress(10,0,0,5) && wifi.cfg.subnet == IPAddress(255,0,0,0), "explicit network settings");
-  NetworkConfig g{false, IPAddress(10,1,2,3), IPAddress(255,255,0,0), IPAddress()};
-  CHECK(gatewayOf(g) == IPAddress(10,1,0,1), "default gateway is the first address of the subnet");
+  CHECK(MobaStation::attachEthInterface(&eth) && MobaStation::attachEthInterface(&wifi, 21105), "two interfaces attached");
+  CHECK(eth.port == Z21_STANDARD_PORT && wifi.port == 21105, "interfaces started on the Z21 port");
+  FakeIf third;
+  CHECK(!MobaStation::attachEthInterface(&third), "no free interface slot");
   MobaStation::attachXpressNet(&xnet, 22);
   MobaStation::begin(F("x"), nullptr, nullptr, false);
   IPAddress A(192,168,0,20), B(192,168,0,30);

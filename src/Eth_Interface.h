@@ -1,5 +1,5 @@
 /**
-  MobaStation Ethernet Interface
+  MobaStation network interface (the ESP link)
 
   © 2021, Markus Mair. All rights reserved.
 
@@ -25,26 +25,11 @@
 #include <Arduino.h>
 #include "MobaStation_Protocol.h"
 
-struct NetworkConfig{
-    bool dhcp;          //get the address from the router
-    IPAddress ip;       //static address, with dhcp the fallback and the address of an own accesspoint
-    IPAddress subnet;
-    IPAddress gateway;  //0.0.0.0 = first address of the subnet
-};
-
-//the configured gateway, or the first address of the subnet when none is set
-//(the Z21 LAN protocol needs no gateway, but the network stacks want one)
-inline IPAddress gatewayOf(const NetworkConfig &net){
-    if(!(net.gateway == IPAddress())) return net.gateway;
-    return IPAddress(net.ip[0] & net.subnet[0], net.ip[1] & net.subnet[1],
-                     net.ip[2] & net.subnet[2], (net.ip[3] & net.subnet[3]) | 1);
-}
-
 class Eth_Interface{
 public:
     virtual ~Eth_Interface() {}
 
-    virtual bool begin(uint16_t port, const NetworkConfig &net) = 0;
+    virtual bool begin(uint16_t port) = 0;
     //data is a complete Z21 record, data[0] is its length
     virtual bool send(IPAddress client, uint16_t port, uint8_t *data) = 0;
     //fills ip, port, dataLength and data, the caller sets iface

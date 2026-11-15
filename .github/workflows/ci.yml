@@ -5,6 +5,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+#the release job attaches the firmware files to the GitHub release of a tag v*
+permissions:
+  contents: write
+
 env:
   #arduino-cli looks for libraries in directories.user, sketches are compiled from the workspace
   ARDUINO_DIRECTORIES_DATA: ${{ github.workspace }}/arduino
@@ -40,28 +44,21 @@ jobs:
       - name: Compile
         run: make esp-build
 
-  compile:
-    name: ${{ matrix.example }}
+      - name: Firmware file
+        run: cp build/MobaStationESP-esp/MobaStationESP.ino.bin MobaStation-ESP8266.bin
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-esp
+          path: MobaStation-ESP8266.bin
+
+  mega:
+    name: Mega (${{ matrix.build_type }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        board: [arduino:avr:mega]
-        include:
-          - example: examples/MobaStationEth
-            build_type: release
-            extra_flags: ""
-          - example: examples/MobaStationEth
-            build_type: debug
-            extra_flags: "-DDEBUG"
-          - example: examples/MobaStationWiFi
-            build_type: release
-            extra_flags: ""
-          - example: examples/MobaStationWiFi
-            build_type: debug
-            extra_flags: "-DDEBUG"
-
-    name: ${{ matrix.example }} (${{ matrix.build_type }})
+        build_type: [release, debug]
 
     steps:
       - name: Checkout
@@ -72,51 +69,37 @@ jobs:
           curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR="$HOME/bin" sh
           echo "$HOME/bin" >> "$GITHUB_PATH"
 
+      #make setup installs the AVR core and the libraries and clones DCC and MobaBus next to the repo
       - name: Install platform and libraries
-        run: |
-          arduino-cli core update-index
-          arduino-cli core install arduino:avr@1.8.8
-          arduino-cli lib install Ethernet Servo mcp_can "Adafruit PWM Servo Driver Library"
-
-      - name: Install DCC and MobaBus
-        run: |
-          mkdir -p "$ARDUINO_DIRECTORIES_USER/libraries"
-          git clone --depth 1 https://github.com/Maggge/DCC "$ARDUINO_DIRECTORIES_USER/libraries/DCC"
-          git clone --depth 1 https://github.com/Maggge/MobaBus "$ARDUINO_DIRECTORIES_USER/libraries/MobaBus"
-
-          #both repositories are plain git repos without library.properties,
-          #arduino-cli needs one to find them
-          cat > "$ARDUINO_DIRECTORIES_USER/libraries/DCC/library.properties" <<'EOF'
-          name=DCC
-          version=0.0.0-git
-          author=Chris Harlow, Fred Decker
-          maintainer=Markus Mair
-          sentence=DCC library for Arduino based on DCC++ EX
-          paragraph=DCC waveform generator and API extracted from CommandStation-EX
-          category=Device Control
-          url=https://github.com/Maggge/DCC
-          architectures=avr
-          includes=DCC.h
-          EOF
-          cat > "$ARDUINO_DIRECTORIES_USER/libraries/MobaBus/library.properties" <<'EOF'
-          name=MobaBus
-          version=0.0.0-git
-          author=Markus Mair
-          maintainer=Markus Mair
-          sentence=Arduino based CAN bus for digital model railroad
-          paragraph=MobaBus modules for turnouts, sensors and boosters over CAN (MCP2515)
-          category=Device Control
-          url=https://github.com/Maggge/MobaBus
-          architectures=avr
-          includes=MobaBus.h
-          depends=mcp_can,Adafruit PWM Servo Driver Library,Servo
-          EOF
+        run: make setup DCC_DIR=$RUNNER_TEMP/DCC MOBABUS_DIR=$RUNNER_TEMP/MobaBus
 
       - name: Compile
         run: |
-          arduino-cli compile \
-            --fqbn ${{ matrix.board }} \
-            --library "$GITHUB_WORKSPACE" \
-            --warnings default \
-            --build-property "build.extra_flags=${{ matrix.extra_flags }}" \
-            ${{ matrix.example }}
+          make build DCC_DIR=$RUNNER_TEMP/DCC MOBABUS_DIR=$RUNNER_TEMP/MobaBus \
+            EXTRA_FLAGS="${{ matrix.build_type == 'debug' && '-DDEBUG' || '' }}"
+
+      - name: Firmware file
+        if: matrix.build_type == 'release'
+        run: cp build/MobaStationESP/MobaStationESP.ino.hex MobaStation-Mega.hex
+
+      - uses: actions/upload-artifact@v4
+        if: matrix.build_type == 'release'
+        with:
+          name: firmware-mega
+          path: MobaStation-Mega.hex
+
+  release:
+    name: release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [host-tests, esp-firmware, mega]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            MobaStation-Mega.hex
+            MobaStation-ESP8266.bin

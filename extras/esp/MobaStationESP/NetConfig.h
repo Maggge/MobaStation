@@ -1,8 +1,9 @@
 /*
   Network settings of the MobaStation ESP firmware.
 
-  Saved in the web interface (LittleFS /net.json) they win over the defaults the Mega
-  sends from MobaStationConfig.h. Without saved settings the defaults of the Mega are used.
+  Saved in the web interface (LittleFS /net.json). A freshly flashed ESP has no router yet:
+  it opens the access point "MobaStation" (password "MobaStation") with the web interface at
+  192.168.0.111, the address the Z21 apps use by default. The router is entered there.
 */
 #pragma once
 
@@ -15,13 +16,16 @@
 #define NET_MODE_AP      1      //only the own access point
 #define NET_MODE_HYBRID  2      //router, own access point while the router is not reachable
 
+//public, the web interface asks to change it
+#define AP_DEFAULT_PWD "MobaStation"
+
 struct NetConfig {
     uint8_t mode = NET_MODE_HYBRID;
     String ssid;
     String pwd;
     String apSsid = "MobaStation";
-    String apPwd = "MobaStation";
-    bool dhcp = false;
+    String apPwd = AP_DEFAULT_PWD;
+    bool dhcp = true;           //in the router network; the access point always uses ip
     IPAddress ip = IPAddress(192, 168, 0, 111);
     IPAddress subnet = IPAddress(255, 255, 255, 0);
     IPAddress gateway = IPAddress(192, 168, 0, 1);
@@ -66,6 +70,7 @@ static void configToJson(const NetConfig &c, JsonObject j, bool withPasswords){
     else{
         j["pwdSet"] = c.pwd.length() > 0;
     }
+    j["apPwdDefault"] = c.apPwd == AP_DEFAULT_PWD;
     j["dhcp"] = c.dhcp;
     j["ip"] = c.ip.toString();
     j["subnet"] = c.subnet.toString();

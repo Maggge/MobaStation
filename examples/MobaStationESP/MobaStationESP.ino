@@ -1,13 +1,17 @@
 /*
-  MobaStation with the MobaStation firmware on the ESP8266 (extras/esp/MobaStationESP)
+  MobaStation: Arduino Mega + Arduino Motor Shield + ESP8266 with the MobaStation firmware
 
-  The ESP does WiFi, UDP and a web interface (status, network, settings, MobaBus modules
-  and their CVs), the Mega exchanges Z21 packets with it in short frames instead of AT
-  commands. Mega + WiFi R3 board: DIP switches 1-4 ON, serial selector on RXD3/TXD3.
+  Flash it as it is, there is nothing to configure. The ESP (extras/esp/MobaStationESP, on the
+  Mega + WiFi R3 board or a separate one at Serial3) opens the access point "MobaStation"
+  (password "MobaStation"), the web interface at http://192.168.0.111 sets up the router
+  and everything else. See the README for the wiring.
 
-  The WiFi settings of MobaStationConfig.h (WIFI_SSID, WIFI_PWD, WIFI_MODE, NETWORK_*,
-  WIFI_AP_*) are sent to the ESP as defaults. Settings saved in the web interface win.
-  Without router the ESP opens the access point WIFI_AP_SSID, web interface at NETWORK_IP.
+  Standard pins (defaults in MobaStation.h):
+    ESP8266          Serial3 (RX3 = 15, TX3 = 14), WiFi R3 board: DIP switches 1-4 ON
+    Motor Shield     main track channel A, programming track channel B
+    MCP2515 (CAN)    CS 53, INT 21, SPI 50-52, MobaBus is off when no module answers
+    MAX485           Serial1 (TX1 = 18, RX1 = 19), direction pin 22, XpressNet throttles
+    power button     pin 24 to GND, status LED pin 25, track voltage divider at A15
 */
 #include <Arduino.h>
 
@@ -15,33 +19,25 @@
 
 #include "ESP_Link.h"
 
-ESP_Link wifi(&WIFI_SERIAL, WIFI_SSID, WIFI_PWD, WIFI_MODE, WIFI_AP_SSID, WIFI_AP_PWD);
+ESP_Link wifi(&WIFI_SERIAL);
 
-#if MOBABUS_ENABLED
 MobaBus mobaBus(MOBABUS_EEPROM, MOBABUS_PROG_PIN, MOBABUS_LED_PIN);
 MobaBus_CAN can(MOBABUS_CAN_CS, MOBABUS_CAN_SPEED, MOBABUS_CAN_CLOCK, MOBABUS_CAN_INT);
-#endif
 
-#if XPRESSNET_ENABLED
 XpressNetMasterClass XpressNet;
-#endif
 
 
 void setup() {
   Serial.begin(115200);
 
-  #if MOBABUS_ENABLED
   //must be called before attaching interfaces and modules
   mobaBus.begin(true);
   mobaBus.attachInterface(&can);
   MobaStation::attachMobaBus(&mobaBus);
-  #endif
 
   MobaStation::attachEthInterface(&wifi);
 
-  #if XPRESSNET_ENABLED
   MobaStation::attachXpressNet(&XpressNet, XPRESSNET_CONTROL_PIN);
-  #endif
 
   MobaStation::begin(MOTOR_SHIELD_TYPE, DRIVE_ON_PROG);
 }

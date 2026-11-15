@@ -1,15 +1,14 @@
-# Local configuration, copied from MobaStationConfig.example.h
-# (pins, IP settings, WiFi access point password)
+# old local configuration (no longer used, may contain WiFi passwords)
 MobaStationConfig.h
 
 # host test binaries (make test)
 extras/test/ms_test
-extras/test/wifi_test
-extras/test/eth_test
 extras/test/esplink_test
 extras/test/esp_link_mega_test
 
-# flash backups of the ESP (make esp-backup)
+__pycache__/
+
+# old flash backups of the ESP (AT firmware)
 extras/esp/backup/
 
 # Arduino / arduino-cli build output

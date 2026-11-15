@@ -21,8 +21,6 @@
 
 #include "MobaStation.h"
 
-#include "Eth_Adapter.h"
-#include "ESP_AT_Wifi.h"
 #include "esplink/EspLinkProtocol.h"
 #include "freeMemory.h"
 
@@ -122,30 +120,12 @@ static uint8_t speedFromDcc128(uint8_t speed, bool dir, uint8_t steps){
 }
 
 bool MobaStation::attachEthInterface(Eth_Interface *eth, uint16_t port){
-  NetworkConfig net;
-  net.dhcp = NETWORK_DHCP;
-  net.ip = IPAddress(NETWORK_IP);
-  net.subnet = IPAddress(NETWORK_SUBNET);
-  net.gateway = IPAddress(NETWORK_GATEWAY);
-  return attachEthInterface(eth, net, port);
-}
-
-bool MobaStation::attachEthInterface(Eth_Interface *eth, IPAddress ip, uint16_t port, IPAddress subnetMask){
-  NetworkConfig net;
-  net.dhcp = false;
-  net.ip = ip;
-  net.subnet = subnetMask;
-  net.gateway = IPAddress();
-  return attachEthInterface(eth, net, port);
-}
-
-bool MobaStation::attachEthInterface(Eth_Interface *eth, const NetworkConfig &net, uint16_t port){
   if(eth == NULL) return false;
   _port = port;   //answers to clients that are not registered go to this port
   for(int i = 0; i < ETH_INTERFACES; i++){
     if(Eth[i] == NULL){
       Eth[i] = eth;
-      return eth->begin(port, net);
+      return eth->begin(port);
     }
   }
   return false;
@@ -161,7 +141,7 @@ void MobaStation::begin(const FSH * motorShieldName, MotorDriver *mainDriver, Mo
   pinMode(POWER_LED, OUTPUT);
   digitalWrite(POWER_LED, LOW);
 
-  //settings of the web interface win over the sketch and MobaStationConfig.h
+  //settings of the web interface win over the defaults
   loadSettings();
   setRailPower(powerOnStart);
 }
@@ -437,8 +417,7 @@ void MobaStation::sendToClient(uint8_t slot, uint16_t DataLen, uint16_t Header, 
   uint8_t data[24];                 //z21 send storage
   assembleData(DataLen, Header, dataString, withXOR, data);
 
-  //only the interface the client talks over, with Ethernet and WiFi attached the
-  //slow AT command queue of the ESP would otherwise carry every Ethernet packet too
+  //only the interface the client talks over
   Eth[c.iface]->send(c.ip, c.port ? c.port : _port, data);
 }
 
@@ -1128,7 +1107,7 @@ uint8_t MobaStation::addClientToSlot(UdpPacket *packet, uint8_t BCFlag){
     for (uint8_t i = 0; i < z21clientMAX; i++){
         if(z21Clients[i].ip == ip){
             z21Clients[i].time = z21ActTimeIP;
-            //the client may have switched between WiFi and Ethernet
+            //the client may come back with another port
             z21Clients[i].port = packet->port;
             z21Clients[i].iface = packet->iface;
             if(BCFlag != 0){
