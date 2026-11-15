@@ -20,9 +20,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
-      #protocol, WiFi driver and Ethernet adapter against stubs, only g++ needed
+      #protocol, ESP link codec and the Mega side of the ESP link against stubs, only g++ needed
       - name: Run host tests
         run: make test
 
@@ -31,10 +31,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install arduino-cli
         run: |
+          mkdir -p "$HOME/bin"
           curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR="$HOME/bin" sh
           echo "$HOME/bin" >> "$GITHUB_PATH"
 
@@ -47,7 +48,7 @@ jobs:
       - name: Firmware file
         run: cp build/MobaStationESP-esp/MobaStationESP.ino.bin MobaStation-ESP8266.bin
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: firmware-esp
           path: MobaStation-ESP8266.bin
@@ -62,10 +63,11 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install arduino-cli
         run: |
+          mkdir -p "$HOME/bin"
           curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR="$HOME/bin" sh
           echo "$HOME/bin" >> "$GITHUB_PATH"
 
@@ -82,7 +84,7 @@ jobs:
         if: matrix.build_type == 'release'
         run: cp build/MobaStationESP/MobaStationESP.ino.hex MobaStation-Mega.hex
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: matrix.build_type == 'release'
         with:
           name: firmware-mega
@@ -94,7 +96,7 @@ jobs:
     needs: [host-tests, esp-firmware, mega]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           merge-multiple: true
 
