@@ -63,6 +63,8 @@ MobaBus modules are configured with "POM accessory" (CV programming on the main 
 `python3 extras/z21test.py 192.168.30.111 cv 1020 33 50` sets CV33 of the module at address 1020 and reads it back.
 The web interface does the same with a form per module. The CVs are described in the README of MobaBus,
 `examples/nano_module` of MobaBus is a complete module (servo turnout, house, fire, light, 8 sensors) on an Arduino Nano.
+With `examples/universal` of MobaBus every board gets the same sketch and is configured on the MobaBus page of the web
+interface ("Konfigurieren"): functions, pins and addresses, without editing a sketch.
 
 `examples/MobaStationEffects` runs MobaBus light effects (house with TV, candle, level crossing) on free pins of the Mega,
 without CAN bus. `make upload EXTRA_FLAGS=-DMOBASTATION_LOOP_STATS` prints the loop time every 10 seconds.
@@ -83,7 +85,7 @@ The web interface (address of MobaStation in the browser, German, works on the p
 | Steuern | drive a loco (speed, direction, functions), a list of saved locos, turnouts and accessories to switch |
 | Programmieren | read and write the address and CVs of a loco decoder on the programming track, write CVs on the main (POM) |
 | Zentrale | turnout mode and DCC range, voltage factor, track power at start |
-| MobaBus | finds all modules on the bus, shows their state (turnout or light on/off, the 8 inputs of a feedback module live) and edits their CVs with names, eg. servo angles, light times, brightness, inverted inputs and outputs, "back to the sketch values" (CV8 = 8) |
+| MobaBus | finds all modules on the bus, shows their state (turnout or light on/off, the 8 inputs of a feedback module live) and edits their CVs with names, eg. servo angles, light times, brightness, inverted inputs and outputs, "back to the sketch values" (CV8 = 8); configures universal boards: which function (LED, candle, house, servo, sensors, ...) on which pin or PCA9685 channel, with address |
 | Netzwerk | WiFi, IP or DHCP |
 | System | firmware version, ESP update over the browser, restart, log |
 

@@ -210,6 +210,13 @@ bool ESP_Link::handleFrame(UdpPacket *pkg){
         case ESPLINK_DISCOVER:
             MobaStation::discoverModules();
             return false;
+        case ESPLINK_BOARD_READ:
+        case ESPLINK_BOARD_WRITE:
+            if(!MobaStation::boardRequest(rx.type == ESPLINK_BOARD_WRITE, d, len) && len >= 4){
+                uint8_t r[5] = {d[0], d[1], d[2], d[3], 254};      //no MobaBus
+                sendFrame(ESPLINK_BOARD_RESULT, r, 5);
+            }
+            return false;
         case ESPLINK_COMMAND:
             if(len < 1) return false;
             switch(d[0]){
@@ -238,8 +245,18 @@ void ESP_Link::cvResult(uint8_t type, uint16_t address, uint16_t cv, uint8_t val
     sendFrame(ESPLINK_CV_RESULT, d, 6);
 }
 
-void ESP_Link::moduleFound(uint8_t type, uint16_t address, uint8_t typeId, uint8_t channels, uint8_t slot, uint8_t version){
-    uint8_t d[7] = {type, 0, 0, typeId, channels, slot, version};
+void ESP_Link::moduleFound(uint8_t type, uint16_t address, uint8_t typeId, uint8_t channels, uint8_t slot, uint8_t version,
+                           uint16_t board, uint8_t flags){
+    uint8_t d[10] = {type, 0, 0, typeId, channels, slot, version, 0, 0, flags};
     espLinkPut16(d + 1, address);
-    sendFrame(ESPLINK_MODULE, d, 7);
+    espLinkPut16(d + 7, board);
+    sendFrame(ESPLINK_MODULE, d, 10);
+}
+
+void ESP_Link::boardFound(const uint8_t *data, uint8_t len){
+    sendFrame(ESPLINK_BOARD, data, len);
+}
+
+void ESP_Link::boardResult(const uint8_t *data, uint8_t len){
+    sendFrame(ESPLINK_BOARD_RESULT, data, len);
 }

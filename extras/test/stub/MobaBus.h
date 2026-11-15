@@ -4,7 +4,8 @@
 #include <vector>
 //MobaBus for the station test: sent packets are recorded, rx is returned by loop()
 enum MobaDevType { ALL = 0, BOOSTER = 1, ACCESSORIE = 2, FEEDBACK = 3 };
-enum MobaCmd { GET = 1, SET = 2, INFO = 3, CONFIG_WRITE = 4, CONFIG_READ = 5, CONFIG_INFO = 6, DISCOVER = 7, ANNOUNCE = 8 };
+enum MobaCmd { GET = 1, SET = 2, INFO = 3, CONFIG_WRITE = 4, CONFIG_READ = 5, CONFIG_INFO = 6, DISCOVER = 7, ANNOUNCE = 8,
+  BOARD_ANNOUNCE = 9, BOARD_READ = 10, BOARD_WRITE = 11, BOARD_INFO = 12 };
 enum MobaCvStatus { CV_OK = 0, CV_UNKNOWN = 1, CV_READONLY = 2, CV_INVALID = 3 };
 struct MobaBus_Meta { MobaDevType type; uint16_t address; uint8_t port; MobaCmd cmd; };
 struct MobaBus_Packet { MobaBus_Meta meta; char busId = -1; uint8_t len = 0; uint8_t data[8]; };

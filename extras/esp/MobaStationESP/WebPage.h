@@ -51,6 +51,23 @@ button.big{flex:1;min-width:80px;padding:12px;white-space:nowrap}
 .item .n{flex:1 1 150px}.item .btns{display:flex;gap:6px;margin-left:auto}.item .sub{font-size:13px;color:var(--muted)}
 .ins{display:flex;flex-wrap:wrap;gap:4px}.in{width:24px;height:24px;border-radius:50%;border:1px solid var(--line);font-size:11px;display:flex;align-items:center;justify-content:center;color:var(--muted)}
 .in.on{background:var(--ok);border-color:var(--ok);color:var(--card)}
+.grp{border:1px solid var(--line);border-radius:10px;margin:12px 0;overflow:hidden}
+.gh{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:10px 12px;background:var(--bg);border-bottom:1px solid var(--line)}
+.gh .n{flex:1 1 180px}.gh .sub{font-size:13px;color:var(--muted)}.grp .item{padding:8px 12px}.grp .item:last-child{border-bottom:0}
+.grp .empty{padding:10px 12px;font-size:13px;color:var(--muted)}
+.gh .sub.err{color:var(--bad)}button:disabled{opacity:.45;cursor:default}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;justify-content:center;align-items:flex-start;padding:32px 12px;overflow-y:auto;z-index:10}
+.modal.open{display:flex}body.noscroll{overflow:hidden}
+.dlg{background:var(--card);border-radius:12px;width:100%;max-width:760px;box-shadow:0 12px 40px rgba(0,0,0,.35);display:flex;flex-direction:column}
+.dlg .dh{display:flex;align-items:center;gap:8px;padding:12px 8px 12px 16px;border-bottom:1px solid var(--line);position:sticky;top:-32px;background:var(--card);border-radius:12px 12px 0 0;z-index:1}
+.dlg .dh h2{flex:1;margin:0;font-size:16px}.dlg .x{border:0;background:none;color:var(--muted);font-size:26px;line-height:1;width:40px;height:40px;cursor:pointer;border-radius:8px}
+.dlg .x:hover{background:var(--bg)}.dlg .db{padding:12px 16px}
+.dlg .df{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:12px 16px;border-top:1px solid var(--line);position:sticky;bottom:-32px;background:var(--card);border-radius:0 0 12px 12px}
+.dlg .df .sp{flex:1}.dlg .df .end{display:flex;gap:8px;margin-left:auto}
+@media (max-width:640px){.modal{padding:0}.dlg{border-radius:0;min-height:100%}.dlg .dh{top:0;border-radius:0}.dlg .df{bottom:0;border-radius:0}}
+.slot{padding:10px 0;border-bottom:1px solid var(--line)}.slot .no{display:inline-flex;width:24px;height:24px;border-radius:50%;background:var(--bg);border:1px solid var(--line);align-items:center;justify-content:center;font-size:12px;font-weight:600}.slot select,.slot input{width:auto;max-width:none}.slot .row{margin:4px 0}
+.slot .fn{min-width:170px}.slot .ad{width:96px}.ios{display:flex;flex-wrap:wrap;gap:6px 10px}.ios .io{display:flex;align-items:center;gap:4px}
+.ios label,.slot .opt{display:inline-flex;align-items:center;gap:4px;margin:0;color:var(--fg);font-size:13px}.warn{color:var(--warn)}.err{color:var(--bad)}
 .bits{display:flex;flex-wrap:wrap;gap:4px 12px}.cv .bits input{width:auto;margin:0}.bits label{display:inline-flex;align-items:center;gap:4px;margin:0;color:var(--fg);font-size:14px}
 #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:8px;display:none}
 </style>
@@ -141,16 +158,25 @@ button.big{flex:1;min-width:80px;padding:12px;white-space:nowrap}
 </section>
 
 <section id="mobabus">
-<div class="card"><h2>Module</h2>
-<div class="row"><button class="b p" onclick="discover()">Module suchen</button><span class="small muted" id="mMsg"></span></div>
+<div class="card"><div class="row"><h2 style="flex:1;margin:0">Module</h2><span class="small muted" id="mMsg"></span>
+<button class="b p" onclick="discover()">Module suchen</button></div>
 <div id="mods"></div></div>
-<div class="card" id="cvCard" style="display:none"><h2 id="cvTitle">CVs</h2>
-<p class="small muted">Geänderte Werte gelten sofort und auch nach einem Neustart, bis &bdquo;Auf Sketch-Werte zurücksetzen&ldquo;.</p>
-<div style="overflow-x:auto"><table><thead><tr><th>CV</th><th>Bedeutung</th><th>Wert</th><th></th></tr></thead><tbody id="cvs"></tbody></table></div>
-<div class="row"><button class="b" onclick="readAll()">Alle lesen</button><button class="b" onclick="resetCvs()">Auf Sketch-Werte zurücksetzen</button></div>
-<label>Adresse ändern</label><div class="row"><input id="newAddr" type="number" min="1" max="16383" style="max-width:140px">
-<button class="b" onclick="changeAddr()">Übernehmen</button></div></div>
 </section>
+<div class="modal" id="cvCard" onclick="if(event.target==this)closeDlg('cvCard')"><div class="dlg">
+<div class="dh"><h2 id="cvTitle">CVs</h2><button class="x" onclick="closeDlg('cvCard')" title="Schließen">&times;</button></div>
+<div class="db"><p class="small muted" id="cvInfo">Geänderte Werte gelten sofort und auch nach einem Neustart.</p>
+<div style="overflow-x:auto"><table><thead><tr><th>CV</th><th>Bedeutung</th><th>Wert</th><th></th></tr></thead><tbody id="cvs"></tbody></table></div>
+<div id="addrBox"><label>Adresse ändern</label><div class="row"><input id="newAddr" type="number" min="1" max="16383" style="max-width:140px">
+<button class="b" onclick="changeAddr()">Übernehmen</button></div></div></div>
+<div class="df"><button class="b" onclick="readAll()">Alle lesen</button><button class="b" id="cvReset" onclick="resetCvs()">Auf Sketch-Werte zurücksetzen</button>
+<span class="sp"></span><button class="b" onclick="closeDlg('cvCard')">Schließen</button></div></div></div>
+<div class="modal" id="bdCard" onclick="if(event.target==this)closeBoard()"><div class="dlg">
+<div class="dh"><h2 id="bdTitle">Board</h2><button class="x" onclick="closeBoard()" title="Schließen">&times;</button></div>
+<div class="db"><p class="small muted">Welche Funktion an welchem Anschluss hängt und unter welcher Adresse sie geschaltet wird. Beim Speichern baut
+das Board seine Module sofort neu auf. Helligkeit, Zeiten und Winkel stellst du danach in den CVs der Module ein.</p>
+<div id="bdBody"></div></div>
+<div class="df"><button class="b d" onclick="clearBoard()">Board leeren</button><span class="small" id="bdMsg" style="flex:1;text-align:right"></span>
+<span class="end"><button class="b" onclick="openBoard(bd.id)">Neu laden</button><button class="b p" id="bdSave" onclick="saveBoard()">Speichern</button></span></div></div></div>
 
 <section id="network">
 <div class="card"><h2>WLAN</h2>
@@ -181,7 +207,7 @@ button.big{flex:1;min-width:80px;padding:12px;white-space:nowrap}
 <script>
 const $=id=>document.getElementById(id);
 const RAIL={0:['Spannung an','ok'],1:['Nothalt','warn'],2:['Spannung aus','bad'],4:['Kurzschluss','bad'],8:['Programmieren','warn']};
-const TYPES={1:'Ausgang',2:'Doppelspule',3:'Servo',4:'16 Servos (PCA9685)',5:'Belebtes Haus',6:'Kerze / Feuer',7:'Blinklicht',100:'Rückmelder (8 Eingänge)'};
+const TYPES={1:'Ausgang',2:'Doppelspule',3:'Servo',4:'16 Servos (PCA9685)',5:'Belebtes Haus',6:'Kerze / Feuer',7:'Blinklicht',8:'LED (dimmbar)',100:'Rückmelder (8 Eingänge)'};
 const SERVO={33:'Winkel Stellung 0',34:'Winkel Stellung 1',35:'Geschwindigkeit (0-255)',36:'Abschaltzeit (x10 ms)'};
 //a CV is a name or {n:name, bits:number of checkboxes (1 = yes/no)}
 const INV={n:'Invertiert',bits:1};
@@ -190,10 +216,18 @@ const CVS={1:{33:INV},2:{33:'Abschaltzeit (x10 ms)',34:INV},3:SERVO,4:SERVO,
   39:'Helligkeit max (0-255)',40:'Helligkeit min, dunkelste TV-Szene'},
  6:{33:'Helligkeit max (0-255)',34:'Modus (0 Kerze, 1 Feuer)',35:'Helligkeit min (0-255)'},
  7:{33:'Periode (x10 ms)',34:'Überblenden (x10 ms)',35:'Helligkeit max, an (0-255)',36:'Helligkeit min, aus (0-255)'},
+ 8:{33:'Helligkeit an (0-255)',34:'Helligkeit aus (0-255)',35:'Überblenden (x10 ms)'},
  100:{33:{n:'Invertierte Eingänge',bits:8}}};
+//universal boards: functions, abilities an IO needs (1 in, 2 out, 4 PWM, 8 servo), number of IOs
+const FN=['– frei –','Digital (an/aus)','LED dimmbar','Kerze','Feuer (1-2 LEDs)','Blinklicht','Wechselblinker','Belebtes Haus','Servo','Rückmelder (Eingänge)'];
+const FNEED=[0,2,4,4,4,2,2,2,8,1],FMIN=[0,1,1,1,1,1,2,1,1,1],FMAX=[0,1,1,1,2,1,2,8,1,8];
+const BSTAT={0:'',1:'unbekanntes Register',2:'nur lesbar',3:'ungültiger Wert',4:'RAM des Boards voll',5:'Anschluss doppelt belegt',
+ 6:'Anschluss kann diese Funktion nicht',7:'falsche Anzahl Anschlüsse',8:'Servo an einem Pin: D9/D10 haben dann kein PWM',254:'keine MobaBus-Verbindung',255:'keine Antwort'};
+const hex=n=>n.toString(16).toUpperCase().padStart(4,'0');
+const ioName=io=>io>=100?'PCA'+(io>=116?2:1)+' K'+((io-100)%16):io>=14?'A'+(io-14):'D'+io;
 const BASE={7:'Version',8:'Hersteller (13 = DIY)',30:'Modultyp',31:'Anzahl Adressen'};
 const STATUS={0:'',1:'unbekannte CV',2:'nur lesbar',3:'ungültiger Wert',254:'keine MobaBus-Adresse',255:'keine Antwort'};
-let ws,mods={},cur=null,pending={},rb={},rbAsked={};
+let ws,mods={},cur=null,pending={},rb={},rbAsked={},boards={},bd=null;
 function toast(t){const e=$('toast');e.textContent=t;e.style.display='block';clearTimeout(e._t);e._t=setTimeout(()=>e.style.display='none',3000)}
 function log(t){const l=$('log');l.textContent+=new Date().toLocaleTimeString()+'  '+t+'\n';l.scrollTop=l.scrollHeight}
 const online=()=>ws&&ws.readyState==1;
@@ -222,8 +256,10 @@ const H={
  setting:m=>{const e=$('s'+m.key);if(!e)return;
   if(m.key==3)e.value=(m.value/1000).toFixed(3);else if(m.key==4)e.checked=!!m.value;else e.value=m.value;
   if(!m.ok)$('sMsg').textContent='Wert abgelehnt'},
- module:m=>{mods[m.slot+':'+m.addr+':'+m.typeId]=m;renderMods();if(!m.addr)return;
+ module:m=>{mods[m.board?'b'+m.board+':'+m.slot:m.slot+':'+m.addr+':'+m.typeId]=m;renderMods();if(m.flags&4)newBoardId();if(!m.addr)return;
   if(m.typeId==100){const g=Math.floor((m.addr-1)/10);if(!rbAsked[g]){rbAsked[g]=1;cmd({c:'rbus',group:g})}}else askTurnout(m.addr)},
+ board:m=>{boards[m.board]=m;renderMods();if(m.flags&1)newBoardId()},
+ breg:m=>bAnswer(m),
  rbus:m=>{rb[m.group]=m.data;renderInputs()},
  cv:m=>{const id='cv'+m.cv;if(cur&&m.addr==cur.addr&&!!m.fb==(cur.typeId==100)){const e=$(id);const s=$(id+'s');
    if(m.status==0&&e&&m.cv!=1&&m.cv!=9&&!(m.cv==8&&m.value==8)){e.value=m.value;syncBits(m.cv)}if(s)s.textContent=m.status in STATUS?STATUS[m.status]:'Status '+m.status}
@@ -234,25 +270,48 @@ const H={
  prog:m=>progDone(m),
  log:m=>log(m.text)};
 function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e}
+function openDlg(id){$(id).classList.add('open');document.body.classList.add('noscroll')}
+function closeDlg(id){$(id).classList.remove('open');if(!document.querySelector('.modal.open'))document.body.classList.remove('noscroll')}
+document.addEventListener('keydown',e=>{if(e.key!='Escape')return;if($('bdCard').classList.contains('open'))closeBoard();else closeDlg('cvCard')});
+function modRow(m){const d=el('div','item'),n=el('div','n'),fb=m.typeId==100;
+ n.append(el('b','',TYPES[m.typeId]||('Typ '+m.typeId)),
+  el('div','sub',m.addr?(fb?'Rückmelder ':'Adresse ')+m.addr+(m.channels>1?' - '+(m.addr+m.channels-1):''):'ohne Adresse'));
+ d.append(n);
+ if(fb&&m.addr){const ins=el('div','ins');ins.dataset.a=m.addr;for(let i=1;i<=8;i++)ins.append(el('span','in',i));d.append(ins)}
+ const bt=el('div','btns');
+ if(m.addr&&!fb)for(const [txt,v] of [['Aus',0],['An',1]]){const b=el('button','b',txt);b.dataset.a=m.addr;b.dataset.d=v;b.onclick=()=>switchItem(m.addr,v);bt.append(b)}
+ if(m.addr){const b=el('button','b','CVs');b.onclick=()=>openCv(m);bt.append(b)}
+ d.append(bt);return d}
 function renderMods(){const t=$('mods');t.innerHTML='';
- const l=Object.values(mods).sort((a,b)=>(a.typeId==100)-(b.typeId==100)||a.addr-b.addr);
- $('mMsg').textContent=l.length+' Module';
- for(const m of l){const d=el('div','item'),n=el('div','n'),fb=m.typeId==100;
-  n.append(el('b','',TYPES[m.typeId]||('Typ '+m.typeId)),
-   el('div','sub',(m.addr?(fb?'Rückmelder ':'Adresse ')+m.addr+(m.channels>1?' - '+(m.addr+m.channels-1):''):'ohne Adresse')+' · Slot '+m.slot));
-  d.append(n);
-  if(fb&&m.addr){const ins=el('div','ins');ins.dataset.a=m.addr;for(let i=1;i<=8;i++)ins.append(el('span','in',i));d.append(ins)}
-  const bt=el('div','btns');
-  if(m.addr&&!fb)for(const [txt,v] of [['Aus',0],['An',1]]){const b=el('button','b',txt);b.dataset.a=m.addr;b.dataset.d=v;b.onclick=()=>switchItem(m.addr,v);bt.append(b)}
-  if(m.addr){const b=el('button','b','CVs');b.onclick=()=>openCv(m);bt.append(b)}
-  d.append(bt);t.append(d)}
+ //one block per board: universal boards first, then sketch boards, modules without board id last
+ const groups={};for(const m of Object.values(mods))(groups[m.board||0]=groups[m.board||0]||[]).push(m);
+ for(const b of Object.values(boards))groups[b.board]=groups[b.board]||[];
+ const keys=Object.keys(groups).map(Number).sort((a,b)=>(!a-!b)||(!!boards[b]-!!boards[a])||a-b);
+ const n=Object.keys(mods).length;$('mMsg').textContent=n||keys.length?n+' Module auf '+keys.length+' Board'+(keys.length==1?'':'s'):'';
+ if(!keys.length)t.append(el('p','small muted','Noch keine Module gefunden.'));
+ for(const k of keys){const g=el('div','grp'),h=el('div','gh'),hn=el('div','n'),u=boards[k];
+  hn.append(el('b','',u?'Universal-Board '+hex(k):k?'Board '+hex(k):'Module ohne Board-ID'));
+  hn.append(el('div','sub',u?u.built+' von '+u.slots+' Funktionen · RAM frei '+u.pool+' %':k?'Sketch-Board':'ältere MobaBus-Version'));
+  if(u&&u.configured>u.built)hn.append(el('div','sub err',(u.configured-u.built)+' Funktion(en) nicht aufgebaut'));
+  h.append(hn);if(u){const b=el('button','b p','Konfigurieren');b.onclick=()=>openBoard(k);h.append(b)}
+  g.append(h);
+  const l=groups[k].sort((a,b)=>(a.typeId==100)-(b.typeId==100)||(a.addr||1e5)-(b.addr||1e5)||a.slot-b.slot);
+  if(!l.length)g.append(el('div','empty','Noch keine Funktionen, mit „Konfigurieren“ einrichten.'));
+  for(const m of l)g.append(modRow(m));
+  t.append(g)}
  renderModStates();renderInputs()}
+//a board took a new id (it was used twice): search again, the old entries are gone then
+let newIdT=0;function newBoardId(){if(Date.now()-newIdT<5000)return;newIdT=Date.now();toast('Board-ID war doppelt vergeben und wurde neu gewürfelt');setTimeout(discover,1500)}
 function renderModStates(){document.querySelectorAll('#mods button[data-d]').forEach(b=>{const s=tstate[b.dataset.a];b.classList.toggle('on',s==Number(b.dataset.d)+1)})}
 function rbGet(a){const g=rb[Math.floor((a-1)/10)];return g?g[(a-1)%10]:undefined}
 function renderInputs(){document.querySelectorAll('#mods .ins').forEach(x=>{const v=rbGet(Number(x.dataset.a));
  [...x.children].forEach((e,i)=>e.classList.toggle('on',v!==undefined&&!!((v>>i)&1)))})}
-function discover(){mods={};rbAsked={};renderMods();$('mMsg').textContent='Suche...';cmd({c:'discover'})}
-function openCv(m){cur=m;$('cvCard').style.display='block';$('cvTitle').textContent='CVs '+(TYPES[m.typeId]||'')+' an Adresse '+m.addr;
+function discover(){mods={};boards={};rbAsked={};renderMods();$('mMsg').textContent='Suche...';cmd({c:'discover'})}
+function openCv(m){cur=m;openDlg('cvCard');$('cvTitle').textContent=(TYPES[m.typeId]||'Modul')+' · '+(m.typeId==100?'Rückmelder ':'Adresse ')+m.addr;
+ //the address of a module on a universal board belongs to the board configuration
+ $('addrBox').style.display=m.flags&2?'none':'';
+ $('cvInfo').textContent='Geänderte Werte gelten sofort und auch nach einem Neustart.'+(m.flags&2?' Adresse und Anschluss stellst du beim Board unter „Konfigurieren“ ein.':'');
+ $('cvReset').textContent=m.flags&2?'Auf Standardwerte zurücksetzen':'Auf Sketch-Werte zurücksetzen';
  $('newAddr').value=m.addr;const t=$('cvs');t.innerHTML='';const list=Object.assign({},CVS[m.typeId]||{},BASE);
  for(const cv of Object.keys(list).map(Number).sort((a,b)=>a-b)){const ro=cv in BASE,def=list[cv],bits=def.bits||0;
   const tr=el('tr','cv');tr.append(el('td','',cv),el('td','',def.n||def));
@@ -266,7 +325,7 @@ function openCv(m){cur=m;$('cvCard').style.display='block';$('cvTitle').textCont
    td.append(w)}
   else if(!ro){const b=el('button','b','Schreiben');b.onclick=()=>writeCv(cv);st.prepend(b)}
   tr.append(td,st);t.append(tr)}
- readAll();$('cvCard').scrollIntoView({behavior:'smooth'})}
+ readAll()}
 //CV command for the open module, feedback modules have their own addresses
 function mcv(o){cmd(Object.assign({c:'cv',addr:cur.addr},cur.typeId==100?{fb:1}:{},o))}
 function syncBits(cv){const w=$('cv'+cv+'b');if(!w)return;const v=Number($('cv'+cv).value);w.querySelectorAll('input').forEach((x,k)=>x.checked=!!((v>>k)&1))}
@@ -276,6 +335,90 @@ function resetCvs(){mcv({cv:8,value:8});toast('Zurückgesetzt');setTimeout(readA
 function changeAddr(){const a=Number($('newAddr').value);if(!(a>0&&a<16384))return toast('Adresse 1-16383');
  mcv({cv:1,value:a&255});setTimeout(()=>mcv({cv:9,value:a>>8}),200);
  toast('Neue Adresse '+a);setTimeout(discover,1000)}
+//---- universal boards: registers are read and written one request at a time
+let bq=[],bcur=null,btimer=null;
+//only one request is on the way: a callback that adds requests must not start a second one
+function breq(o,cb){bq.push(Object.assign({cb},o));if(!bcur)bnext()}
+function bnext(){clearTimeout(btimer);bcur=bq.shift()||null;if(!bcur)return;
+ const o={c:'breg',board:bcur.board,reg:bcur.reg};if(bcur.values)o.values=bcur.values;else o.count=bcur.count||1;cmd(o);
+ btimer=setTimeout(()=>{const c=bcur;bcur=null;c.tries=(c.tries||0)+1;if(c.tries<3)bq.unshift(c);else c.cb({status:255,values:[]});if(!bcur)bnext()},900)}
+function bAnswer(m){if(!bcur||m.board!=bcur.board||m.reg!=bcur.reg)return;const c=bcur;bcur=null;clearTimeout(btimer);c.cb(m);if(!bcur)bnext()}
+const SLOT=s=>16+s*13;
+function openBoard(id){bq=[];bcur=null;clearTimeout(btimer);
+ bd={id,found:0,modes:[0,0],caps:{},orig:{},slots:[]};
+ openDlg('bdCard');$('bdTitle').textContent='Universal-Board '+hex(id);$('bdBody').innerHTML='';$('bdSave').disabled=true;bd.showNew=false;
+ const msg=$('bdMsg');msg.className='small';let done=0,total=1,failed=false;
+ const step=m=>{if(m.status){if(!failed)msg.textContent='Fehler: '+(BSTAT[m.status]||m.status);failed=true;return false}
+  msg.textContent='Lese '+(++done)+'/'+total;if(done==total){msg.textContent='';buildSlots();renderBoard()}return true};
+ breq({board:id,reg:1,count:3},m=>{if(!step(m))return;bd.modes=[m.values[0],m.values[1]];bd.origModes=bd.modes.slice();bd.found=m.values[2];
+  const ios=[...Array(32).keys()];for(const b of [0,1])if(bd.found&(1<<b))for(let c=0;c<16;c++)ios.push(100+b*16+c);
+  const reads=[];for(let i=0;i<ios.length;i+=3)reads.push(['c',256+ios[i],Math.min(3,ios.length-i)]);
+  for(let r=16;r<SLOT(16);r+=3)reads.push(['s',r,Math.min(3,SLOT(16)-r)]);
+  total=1+reads.length;
+  //store first: the last answer builds the dialog
+  for(const [k,reg,n] of reads)breq({board:id,reg,count:n},m=>{
+   if(!m.status)m.values.forEach((v,i)=>{if(k=='c')bd.caps[reg-256+i]=v;else bd.orig[reg+i]=v});step(m)})})}
+function buildSlots(){bd.slots=[];for(let s=0;s<16;s++){const o=bd.orig,r=SLOT(s);
+ bd.slots.push({f:o[r],io:[1,2,3,4,5,6,7,8].map(i=>o[r+i]),p1:o[r+9],p2:o[r+10],addr:o[r+11]|(o[r+12]<<8)})}}
+function capsOf(io){if(io>=100){const b=io>=116?1:0;return bd.found&(1<<b)?(bd.modes[b]?8:6):0}return bd.caps[io]||0}
+function renderBoard(){const B=$('bdBody');B.innerHTML='';
+ for(const b of [0,1])if(bd.found&(1<<b)){const r=el('div','row');r.append(el('span','','PCA9685 0x4'+b+' (PCA'+(b+1)+')'));
+  const s=el('select');s.style.width='auto';[['Licht, 1 kHz',0],['Servos, 50 Hz',1]].forEach(([t,v])=>{const o=el('option','',t);o.value=v;s.append(o)});
+  s.value=bd.modes[b];s.onchange=()=>{bd.modes[b]=Number(s.value);renderBoard()};r.append(s);B.append(r)}
+ if(!bd.found)B.append(el('p','small muted','Kein PCA9685 gefunden (I2C an A4/A5, Adresse 0x40 oder 0x41). Es stehen die Pins des Nano zur Verfügung.'));
+ //IOs in use: slot and position
+ const used={};bd.slots.forEach((sl,s)=>{if(sl.f)sl.io.slice(0,FMAX[sl.f]).forEach((io,i)=>{if(io!=255)used[io]=s+':'+i})});
+ const allIo=Object.keys(bd.caps).map(Number).concat([...Array(32)].map((_,c)=>100+c)).filter((v,i,a)=>a.indexOf(v)==i&&capsOf(v)).sort((a,b)=>a-b);
+ const firstFree=bd.slots.findIndex(sl=>!sl.f);
+ const mode=Number($('s1').value),range=Number($('s2').value);
+ bd.slots.forEach((sl,s)=>{if(!sl.f&&!(bd.showNew&&s==firstFree))return;
+  const d=el('div','slot'),r=el('div','row');r.append(el('span','no',s+1));
+  const f=el('select','fn');FN.forEach((t,i)=>{const o=el('option','',t);o.value=i;f.append(o)});f.value=sl.f;
+  f.onchange=()=>{sl.f=Number(f.value);if(sl.f)bd.showNew=false;else{sl.io=sl.io.map(()=>255);sl.p1=0;sl.p2=0;sl.addr=0}renderBoard()};r.append(f);
+  if(sl.f){const fb=sl.f==9;r.append(el('span','small muted',fb?'Rückmelder':'Adresse'));
+   const a=el('input','ad');a.type='number';a.min=fb?1:1;a.max=fb?20:16383;a.value=sl.addr||'';a.oninput=()=>{sl.addr=Number(a.value)||0;hint();const dt=boardDirty();$('bdSave').disabled=!dt;if(dt){$('bdMsg').className='small warn';$('bdMsg').textContent='Ungespeicherte Änderungen'}};r.append(a);
+   const h=el('span','small');r.append(h);
+   const hint=()=>{h.className='small warn';h.textContent=!sl.addr?'ohne Adresse wartet das Modul':
+    fb?(sl.addr>20?'Rückmelder 1-20':''):((mode==1||(mode==2&&sl.addr<=range))?'wird als DCC-Weiche gesendet (Zentrale)':'')};hint()}
+  d.append(r);
+  if(sl.f){const ios=el('div','ios'),need=FNEED[sl.f];
+   for(let i=0;i<FMAX[sl.f];i++){const w=el('span','io'),sel=el('select'),cur=sl.io[i];
+    const tv=sl.f==7&&(sl.p1>>i)&1,nd=need|(tv?4:0);
+    const none=el('option','',i<FMIN[sl.f]?'Anschluss…':'–');none.value=255;sel.append(none);
+    for(const io of allIo){const c=capsOf(io);if((c&nd)!=nd&&io!=cur)continue;
+     const o=el('option','',ioName(io)+(io<100&&c&4?' ~':''));o.value=io;
+     if(used[io]!==undefined&&used[io]!=s+':'+i){o.disabled=true;o.textContent+=' (belegt)'}
+     if((c&nd)!=nd)o.textContent+=' (!)';sel.append(o)}
+    sel.value=cur;sel.onchange=()=>{sl.io[i]=Number(sel.value);renderBoard()};w.append(sel);
+    if(sl.f==7){const lb=el('label'),c=el('input');c.type='checkbox';c.checked=tv;c.onchange=()=>{sl.p1^=1<<i;renderBoard()};lb.append(c,'TV');w.append(lb)}
+    ios.append(w)}
+   d.append(ios);
+   if(sl.f==7||sl.f==9){const lb=el('label','opt'),c=el('input');c.type='checkbox';c.checked=sl.p2&1;c.onchange=()=>{sl.p2^=1;renderBoard()};
+    lb.append(c,sl.f==7?'erster Anschluss ist Dauerlicht':'ohne internen Pull-up');d.append(lb)}}
+  B.append(d)});
+ if(firstFree>=0&&!bd.showNew){const a=el('button','b','+ Funktion hinzufügen');a.style.marginTop='10px';a.onclick=()=>{bd.showNew=true;renderBoard()};B.append(a)}
+ if(!bd.slots.some(sl=>sl.f)&&!bd.showNew)B.prepend(el('p','small','Auf diesem Board ist noch nichts eingerichtet.'));
+ const dirty=boardDirty();$('bdSave').disabled=!dirty;if(dirty){$('bdMsg').className='small warn';$('bdMsg').textContent='Ungespeicherte Änderungen'}
+ else if($('bdMsg').textContent=='Ungespeicherte Änderungen')$('bdMsg').textContent=''}
+function boardDirty(){if(!bd||!bd.slots.length)return false;const r=boardRegs();
+ return Object.keys(r).some(k=>r[k]!==bd.orig[k])||bd.modes.some((m,i)=>m!=bd.origModes[i])}
+function closeBoard(){if(boardDirty()&&!confirm('Änderungen verwerfen?'))return;closeDlg('bdCard')}
+function clearBoard(){if(!bd||!bd.slots.length||!confirm('Alle Funktionen von Board '+hex(bd.id)+' entfernen?'))return;
+ bd.slots.forEach(sl=>{sl.f=0;sl.io=sl.io.map(()=>255);sl.p1=0;sl.p2=0;sl.addr=0});bd.modes=[0,0];bd.showNew=false;renderBoard();saveBoard()}
+function boardRegs(){const r={};bd.slots.forEach((sl,s)=>{const b=SLOT(s),n=sl.f?FMAX[sl.f]:0;
+ r[b]=sl.f;for(let i=0;i<8;i++)r[b+1+i]=i<n?sl.io[i]:255;r[b+9]=sl.f?sl.p1&255:0;r[b+10]=sl.f?sl.p2&255:0;
+ const a=sl.f?sl.addr:0;r[b+11]=a&255;r[b+12]=a>>8});return r}
+function saveBoard(){if(!bd)return;const regs=boardRegs(),id=bd.id,msg=$('bdMsg');msg.className='small';
+ const ch=Object.keys(regs).map(Number).filter(r=>regs[r]!==bd.orig[r]).sort((a,b)=>a-b);
+ const writes=[];for(const b of [0,1])if(bd.modes[b]!=bd.origModes[b])writes.push([1+b,[bd.modes[b]]]);
+ for(let i=0;i<ch.length;){let n=1;while(n<4&&i+n<ch.length&&ch[i+n]==ch[i]+n)n++;writes.push([ch[i],ch.slice(i,i+n).map(r=>regs[r])]);i+=n}
+ let bad=0;$('bdSave').disabled=true;msg.textContent='Speichere…';
+ for(const [reg,values] of writes)breq({board:id,reg,values},m=>{if(m.status)bad=m.status});
+ breq({board:id,reg:0,values:[1]},m=>{$('bdSave').disabled=false;
+  const st=bad||m.status,slot=m.values[1];
+  if(st){msg.className='small err';msg.textContent=(slot!==undefined&&slot<16?'Funktion '+(slot+1)+': ':'')+(BSTAT[st]||'Status '+st)}
+  else{msg.className='small';msg.textContent='Gespeichert, Module neu aufgebaut'}
+  bd.orig=Object.assign(bd.orig,regs);bd.origModes=bd.modes.slice();bd.showNew=false;renderBoard();setTimeout(discover,800)})}
 function saveSettings(){$('sMsg').textContent='';
  cmd({c:'set',key:1,value:Number($('s1').value)});cmd({c:'set',key:2,value:Number($('s2').value)});
  cmd({c:'set',key:3,value:Math.round(Number($('s3').value)*1000)});cmd({c:'set',key:4,value:$('s4').checked?1:0});toast('Gespeichert')}

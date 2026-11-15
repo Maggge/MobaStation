@@ -214,7 +214,12 @@ class MobaStation_Management{
 public:
     //type ACCESSORIE or FEEDBACK
     virtual void cvResult(uint8_t type, uint16_t address, uint16_t cv, uint8_t value, uint8_t status) = 0;
-    virtual void moduleFound(uint8_t type, uint16_t address, uint8_t typeId, uint8_t channels, uint8_t slot, uint8_t version) = 0;
+    //board = random id of the board, flags MOBABUS_ANNOUNCE_* (0 for modules without them)
+    virtual void moduleFound(uint8_t type, uint16_t address, uint8_t typeId, uint8_t channels, uint8_t slot, uint8_t version,
+                             uint16_t board, uint8_t flags) = 0;
+    //data of BOARD_ANNOUNCE / BOARD_INFO of a universal board (board id, ...)
+    virtual void boardFound(const uint8_t *data, uint8_t len) = 0;
+    virtual void boardResult(const uint8_t *data, uint8_t len) = 0;
 };
 
 class MobaStation
@@ -416,6 +421,12 @@ public:
     static bool requestCv(uint8_t type, uint16_t address, uint16_t cv, bool write, uint8_t value);
     //all MobaBus modules answer to the management with moduleFound()
     static void discoverModules();
+    /**
+     * BOARD_READ / BOARD_WRITE to a universal board: data = board id hi, lo, register hi, lo,
+     * count or values. The answer comes to the management with boardResult().
+     * @return false without MobaBus or with invalid data
+     */
+    static bool boardRequest(bool write, const uint8_t *data, uint8_t len);
     //emergency stop of all locos, the track power stays on
     static void stopAll();
 

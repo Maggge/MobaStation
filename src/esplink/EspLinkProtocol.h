@@ -75,7 +75,13 @@ enum EspLinkType : uint8_t {
     ESPLINK_CV_WRITE     = 0x41,    //ESP -> Mega: address u16, cv u16, value
     ESPLINK_CV_RESULT    = 0x42,    //Mega -> ESP: address u16, cv u16, value, status (MobaCvStatus, 255 = timeout)
     ESPLINK_DISCOVER     = 0x48,    //ESP -> Mega: ask all MobaBus modules
-    ESPLINK_MODULE       = 0x49,    //Mega -> ESP: type, address u16, type id, channels, slot, version
+    ESPLINK_MODULE       = 0x49,    //Mega -> ESP: type, address u16, type id, channels, slot, version, board u16, flags
+    //universal boards (MobaBus_Universal), the data is the one of the MobaBus packets,
+    //board id and register high byte first (not like espLinkPut16()):
+    ESPLINK_BOARD        = 0x4A,    //Mega -> ESP: BOARD_ANNOUNCE (board u16, version, built, configured, slots, pool free %, flags)
+    ESPLINK_BOARD_READ   = 0x4B,    //ESP -> Mega: board u16, register u16, count (1..3)
+    ESPLINK_BOARD_WRITE  = 0x4C,    //ESP -> Mega: board u16, register u16, values (1..4)
+    ESPLINK_BOARD_RESULT = 0x4D,    //Mega -> ESP: BOARD_INFO (board u16, register u16, status, values), status 254 = no MobaBus
     ESPLINK_COMMAND      = 0x50,    //ESP -> Mega: command (EspLinkCommand), arguments
     ESPLINK_LOG          = 0x60,    //Mega -> ESP: text without line end
 };

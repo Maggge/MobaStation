@@ -29,7 +29,7 @@
 #include "NetConfig.h"
 #include "WebPage.h"
 
-#define FIRMWARE_VERSION "1.3.0"
+#define FIRMWARE_VERSION "1.4.0"
 #define MAX_MODULES_LIST 32
 //the Z21 data of one datagram, longer packets are cut (the Mega handles 64 bytes)
 #define UDP_MAX 64
@@ -52,9 +52,14 @@ uint8_t megaStatus[ESPLINK_STATUS_SIZE];
 bool haveStatus = false;
 uint32_t udpToMega = 0, udpFromMega = 0;
 
-struct ModuleInfo { uint8_t type; uint16_t address; uint8_t typeId, channels, slot, version; };
+struct ModuleInfo { uint8_t type; uint16_t address; uint8_t typeId, channels, slot, version; uint16_t board; uint8_t flags; };
 ModuleInfo modules[MAX_MODULES_LIST];
 uint8_t moduleCount = 0;
+//universal boards (BOARD_ANNOUNCE)
+#define MAX_BOARDS_LIST 8
+struct BoardInfo { uint16_t id; uint8_t version, built, configured, slots, pool, flags; };
+BoardInfo boards[MAX_BOARDS_LIST];
+uint8_t boardCount = 0;
 
 bool apOn = false;
 bool wifiStarted = false;
@@ -165,6 +170,24 @@ void pushModule(const ModuleInfo &m){
     d["channels"] = m.channels;
     d["slot"] = m.slot;
     d["version"] = m.version;
+    d["board"] = m.board;
+    d["flags"] = m.flags;
+    wsSend(d);
+}
+
+//board frames carry the data of the MobaBus packets: high byte first
+uint16_t be16(const uint8_t *d){ return ((uint16_t)d[0] << 8) | d[1]; }
+
+void pushBoard(const BoardInfo &b){
+    JsonDocument d;
+    d["t"] = "board";
+    d["board"] = b.id;
+    d["version"] = b.version;
+    d["built"] = b.built;
+    d["configured"] = b.configured;
+    d["slots"] = b.slots;
+    d["pool"] = b.pool;
+    d["flags"] = b.flags;
     wsSend(d);
 }
 
@@ -364,13 +387,40 @@ void handleFrame(){
             break;
         case ESPLINK_MODULE:
             if(len >= 7){
-                ModuleInfo m = {d[0], espLinkGet16(d + 1), d[3], d[4], d[5], d[6]};
+                ModuleInfo m = {d[0], espLinkGet16(d + 1), d[3], d[4], d[5], d[6], 0, 0};
+                if(len >= 10){
+                    m.board = espLinkGet16(d + 7);
+                    m.flags = d[9];
+                }
                 uint8_t i = 0;
-                //a module is known by its slot and type id, the address may have changed
-                while(i < moduleCount && !(modules[i].slot == m.slot && modules[i].typeId == m.typeId && modules[i].address == m.address)) i++;
+                //a module is known by its board and slot (older modules: slot, type id and address)
+                while(i < moduleCount && !(m.board ? modules[i].board == m.board && modules[i].slot == m.slot :
+                       modules[i].slot == m.slot && modules[i].typeId == m.typeId && modules[i].address == m.address)) i++;
                 if(i == moduleCount && moduleCount < MAX_MODULES_LIST) moduleCount++;
                 if(i < MAX_MODULES_LIST) modules[i] = m;
                 pushModule(m);
+            }
+            break;
+        case ESPLINK_BOARD:
+            if(len >= 7){
+                BoardInfo b = {be16(d), d[2], d[3], d[4], d[5], d[6], (uint8_t)(len >= 8 ? d[7] : 0)};
+                uint8_t i = 0;
+                while(i < boardCount && boards[i].id != b.id) i++;
+                if(i == boardCount && boardCount < MAX_BOARDS_LIST) boardCount++;
+                if(i < MAX_BOARDS_LIST) boards[i] = b;
+                pushBoard(b);
+            }
+            break;
+        case ESPLINK_BOARD_RESULT:
+            if(len >= 5){
+                JsonDocument j;
+                j["t"] = "breg";
+                j["board"] = be16(d);
+                j["reg"] = be16(d + 2);
+                j["status"] = d[4];
+                JsonArray v = j["values"].to<JsonArray>();
+                for(uint8_t i = 5; i < len; i++) v.add(d[i]);
+                wsSend(j);
             }
             break;
         case ESPLINK_LOG:
@@ -550,7 +600,28 @@ void wsCommand(JsonVariantConst j){
     }
     else if(!strcmp(c, "discover")){
         moduleCount = 0;
+        boardCount = 0;
         sendFrame(ESPLINK_DISCOVER, NULL, 0);
+    }
+    else if(!strcmp(c, "breg")){
+        //register of a universal board: "count" reads, "values" writes (register 0 = 1 takes the configuration)
+        uint8_t d[8];
+        int board = j["board"].as<int>(), reg = j["reg"].as<int>();
+        d[0] = board >> 8; d[1] = board; d[2] = reg >> 8; d[3] = reg;
+        JsonArrayConst v = j["values"].as<JsonArrayConst>();
+        if(!v.isNull()){
+            uint8_t n = 0;
+            for(JsonVariantConst x: v){
+                if(n == 4) break;
+                d[4 + n++] = x.as<int>();
+            }
+            if(n > 0) sendFrame(ESPLINK_BOARD_WRITE, d, 4 + n);
+        }
+        else{
+            int count = j["count"] | 1;
+            d[4] = count < 1 ? 1 : count > 3 ? 3 : count;
+            sendFrame(ESPLINK_BOARD_READ, d, 5);
+        }
     }
     else if(!strcmp(c, "rbus")){
         //LAN_RMBUS_GETDATA of a group, the answer comes as "rbus"
@@ -581,6 +652,7 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
         //a new page gets the current state at once
         sendNetStatus();
         pushStatus();
+        for(uint8_t i = 0; i < boardCount; i++) pushBoard(boards[i]);
         for(uint8_t i = 0; i < moduleCount; i++) pushModule(modules[i]);
         webSubscribe();
     }

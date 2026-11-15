@@ -75,7 +75,10 @@ public:
     uint16_t linkErrors();
 
     void cvResult(uint8_t type, uint16_t address, uint16_t cv, uint8_t value, uint8_t status) override;
-    void moduleFound(uint8_t type, uint16_t address, uint8_t typeId, uint8_t channels, uint8_t slot, uint8_t version) override;
+    void moduleFound(uint8_t type, uint16_t address, uint8_t typeId, uint8_t channels, uint8_t slot, uint8_t version,
+                     uint16_t board, uint8_t flags) override;
+    void boardFound(const uint8_t *data, uint8_t len) override;
+    void boardResult(const uint8_t *data, uint8_t len) override;
 };
 
 #endif

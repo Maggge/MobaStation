@@ -120,7 +120,26 @@ int main(){
   CHECK(mbus.discovers == 1, "discover forwarded");
   mbus.push(ACCESSORIE, 1001, ANNOUNCE, {5, 1, 0, 2}); MobaStation::loop();
   f = written(esp); auto m = find(f, ESPLINK_MODULE);
-  CHECK(m && m->d[0] == ACCESSORIE && espLinkGet16(&m->d[1]) == 1001 && m->d[3] == 5, "module found");
+  CHECK(m && m->d[0] == ACCESSORIE && espLinkGet16(&m->d[1]) == 1001 && m->d[3] == 5 && m->d.size() == 10 && espLinkGet16(&m->d[7]) == 0,
+        "module found (old module without board id)");
+  mbus.push(ACCESSORIE, 1002, ANNOUNCE, {8, 1, 3, 2, 0x3A, 0x7F, 2}); MobaStation::loop();
+  f = written(esp); m = find(f, ESPLINK_MODULE);
+  CHECK(m && espLinkGet16(&m->d[7]) == 0x3A7F && m->d[9] == 2 && m->d[5] == 3, "board id and flags of the module");
+
+  // universal boards: requests go to the bus, answers to the ESP
+  mbus.sent.clear();
+  espSends(esp, ESPLINK_BOARD_WRITE, {0x3A, 0x7F, 0, 16, 2}); MobaStation::loop();
+  CHECK(mbus.sent.size() == 1 && mbus.sent[0].meta.cmd == BOARD_WRITE && mbus.sent[0].meta.type == ALL && mbus.sent[0].len == 5 &&
+        mbus.sent[0].data[0] == 0x3A && mbus.sent[0].data[4] == 2, "BOARD_WRITE on the bus");
+  espSends(esp, ESPLINK_BOARD_READ, {0x3A, 0x7F, 1, 3}); MobaStation::loop();
+  f = written(esp); auto br = find(f, ESPLINK_BOARD_RESULT);
+  CHECK(br && br->d.size() == 5 && br->d[4] == 254 && mbus.sent.size() == 1, "read without count is refused");
+  mbus.push(ALL, 0, BOARD_INFO, {0x3A, 0x7F, 0, 16, 0, 2}); MobaStation::loop();
+  f = written(esp); br = find(f, ESPLINK_BOARD_RESULT);
+  CHECK(br && br->d.size() == 6 && br->d[0] == 0x3A && br->d[5] == 2, "BOARD_INFO to the ESP");
+  mbus.push(ALL, 0, BOARD_ANNOUNCE, {0x3A, 0x7F, 1, 4, 5, 16, 46}); MobaStation::loop();
+  f = written(esp); auto bf = find(f, ESPLINK_BOARD);
+  CHECK(bf && bf->d.size() == 7 && bf->d[6] == 46, "BOARD_ANNOUNCE to the ESP");
 
   // commands
   espSends(esp, ESPLINK_COMMAND, {ESPLINK_CMD_POWER_ON}); MobaStation::loop();

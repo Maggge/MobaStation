@@ -350,7 +350,17 @@ void MobaStation::processMobaBus(){
     }
     if(pkg.meta.cmd == ANNOUNCE){
       if(management != NULL && pkg.len >= 4){
-        management->moduleFound(pkg.meta.type, pkg.meta.address, pkg.data[0], pkg.data[1], pkg.data[2], pkg.data[3]);
+        //MobaBus version 2 adds the board id and flags
+        uint16_t board = pkg.len >= 7 ? ((uint16_t)pkg.data[4] << 8) | pkg.data[5] : 0;
+        uint8_t flags = pkg.len >= 7 ? pkg.data[6] : 0;
+        management->moduleFound(pkg.meta.type, pkg.meta.address, pkg.data[0], pkg.data[1], pkg.data[2], pkg.data[3], board, flags);
+      }
+      return;
+    }
+    if(pkg.meta.cmd == BOARD_ANNOUNCE || pkg.meta.cmd == BOARD_INFO){
+      if(management != NULL && pkg.len >= 2){
+        if(pkg.meta.cmd == BOARD_ANNOUNCE) management->boardFound(pkg.data, pkg.len);
+        else management->boardResult(pkg.data, pkg.len);
       }
       return;
     }
@@ -1969,6 +1979,15 @@ bool MobaStation::requestCv(uint8_t type, uint16_t address, uint16_t cv, bool wr
 
 void MobaStation::discoverModules(){
   if(mobaBus != NULL) mobaBus->discover();
+}
+
+bool MobaStation::boardRequest(bool write, const uint8_t *data, uint8_t len){
+  //board id and register, a read has a count, a write 1..4 values
+  if(mobaBus == NULL || len < 5 || len > 8) return false;
+  uint8_t d[8];
+  for(uint8_t i = 0; i < len; i++) d[i] = data[i];
+  mobaBus->sendPkg(ALL, 0, write ? BOARD_WRITE : BOARD_READ, len, d);
+  return true;
 }
 
 void MobaStation::stopAll(){
