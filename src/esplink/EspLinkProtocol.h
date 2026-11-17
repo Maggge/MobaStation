@@ -41,10 +41,13 @@
 
 #define ESP_LINK_VERSION 1
 
-//the Mega buffers only 64 received bytes and its loop can stand a few ms (EEPROM
-//writes, CAN), 115200 baud gives it 5.5 ms. Both sides must use the same value
+//500000 baud is exact on the 16 MHz Mega (115200 is 2 % off) and passes a MobaBus announce
+//in 0.3 ms instead of 1.3 ms: at 115200 the Mega fell behind a burst of CAN packets and its
+//MCP2515 lost some. The Mega only buffers 64 received bytes and its loop can stand a few ms
+//(EEPROM writes, CAN): the ESP paces what it sends to the Mega (MobaStationESP.ino, sendFrame).
+//Both sides must use the same value.
 #ifndef ESP_LINK_BAUD
-#define ESP_LINK_BAUD 115200
+#define ESP_LINK_BAUD 500000
 #endif
 
 //type + data, enough for a Z21 datagram of 64 bytes with ip and port

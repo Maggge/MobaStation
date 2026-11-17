@@ -33,7 +33,7 @@
 #include <WebPageGz.h>
 #endif
 
-#define FIRMWARE_VERSION "0.5.1"
+#define FIRMWARE_VERSION "0.6.0"
 #define MAX_MODULES_LIST 32
 //the Z21 data of one datagram, longer packets are cut (the Mega handles 64 bytes)
 #define UDP_MAX 64
@@ -84,13 +84,45 @@ bool webSubscribed = false;
 
 //---------------------------------------------------------------- link to the Mega
 
+//The Mega buffers 64 received bytes and its loop can stand about 5 ms (EEPROM writes, CAN).
+//At 500000 baud a burst would fill that in 1.3 ms, so the frames to the Mega are paced:
+//at most LINK_TX_BURST bytes at once, then LINK_TX_RATE bytes per ms (24 + 5 * 8 = 64).
+#define LINK_TX_RATE 8
+#define LINK_TX_BURST 24
+#define LINK_TX_QUEUE 1024
+uint8_t txQueue[LINK_TX_QUEUE];
+uint16_t txHead = 0, txCount = 0;
+uint32_t txCredit = LINK_TX_BURST * 1000UL;     //bytes * 1000
+uint32_t txAt = 0;
+uint16_t txDropped = 0;
+
+void linkTxPump(){
+    uint32_t now = micros();
+    txCredit += (now - txAt) * LINK_TX_RATE;
+    if(txCredit > LINK_TX_BURST * 1000UL) txCredit = LINK_TX_BURST * 1000UL;
+    txAt = now;
+    while(txCount > 0 && txCredit >= 1000 && Serial.availableForWrite() > 0){
+        Serial.write(txQueue[txHead]);
+        txHead = (txHead + 1) % LINK_TX_QUEUE;
+        txCount--;
+        txCredit -= 1000;
+    }
+}
+
 void sendFrame(uint8_t type, const uint8_t *data, uint8_t len){
     uint8_t out[ESP_LINK_MAX_FRAME];
     uint8_t n = EspLinkCodec::encode(type, data, len, out);
     if(n == 0) return;
+    if(txCount + n + 1 > LINK_TX_QUEUE){
+        txDropped++;
+        return;
+    }
     //a leading 0x00 ends what the Mega received before, eg. our boot messages
-    Serial.write((uint8_t)0);
-    Serial.write(out, n);
+    uint16_t t = (txHead + txCount) % LINK_TX_QUEUE;
+    txQueue[t] = 0;
+    for(uint8_t i = 0; i < n; i++) txQueue[(t + 1 + i) % LINK_TX_QUEUE] = out[i];
+    txCount += n + 1;
+    linkTxPump();
 }
 
 void sendHello(bool request){
@@ -391,6 +423,7 @@ void handleFrame(){
 }
 
 void linkLoop(){
+    linkTxPump();
     while(Serial.available()){
         if(link.feed(Serial.read())) handleFrame();
     }
@@ -763,7 +796,8 @@ void setupWeb(){
 //---------------------------------------------------------------- start
 
 void setup(){
-    Serial.setRxBufferSize(1024);
+    //20 ms of data at 500000 baud while WiFi keeps the loop busy
+    Serial.setRxBufferSize(2048);
     Serial.begin(ESP_LINK_BAUD);
     Serial.setDebugOutput(false);
 

@@ -111,6 +111,7 @@ jobs:
             | `MobaStation-Mega.hex` | Arduino Mega 2560, also the Mega of a Mega + WiFi R3 board |
             | `MobaStation-ESP8266.bin` | ESP8266 with 4 MB flash: Mega + WiFi R3 board, Wemos D1 mini, NodeMCU |
 
+            Always flash both files of one release, the Mega and the ESP need the same version.
             How to flash both: [README, Flashing](https://github.com/Maggge/MobaStation#flashing).
             After the first start the station opens the WiFi access point "MobaStation" (password "MobaStation"),
             everything else is set up in the web interface at http://192.168.0.111.

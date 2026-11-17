@@ -908,6 +908,10 @@ void MobaStation::processLanXPacket(UdpPacket *packet, uint8_t *rec){
       Serial.println(speedSteps);
       #endif
     }
+    //an XpressNet throttle that drives this loco gets "operated by another device": the
+    //multiMAUS blinks its loco symbol. It does not take the new state (neither the E7 nor the
+    //E4 loco info, tried), its display stays as it was until it asks again
+    if(XpressNet != NULL) XpressNet->ReqLocoBusy(addr);
     broadcastLocoInfo(addr, &packet->ip);
     break;  }
   case LAN_X_GET_FIRMWARE_VERSION:

@@ -83,6 +83,10 @@ attached to every [release](https://github.com/Maggge/MobaStation/releases/lates
 | `MobaStation-Mega.hex` | Arduino Mega 2560, also the Mega of a Mega + WiFi R3 board |
 | `MobaStation-ESP8266.bin` | ESP8266 with 4 MB flash: the ESP of a Mega + WiFi R3 board, Wemos D1 mini, NodeMCU |
 
+**The Mega and the ESP always need the same version.** They talk over a serial link that changes between versions
+(since 0.6.0 at 500 000 baud), so always flash both files of one release. With different versions the web interface
+shows "Station not connected".
+
 To build them yourself instead, see [Building it yourself](#building-it-yourself).
 
 ### Tools
@@ -144,10 +148,13 @@ Instead of esptool, open the [ESP web flasher](https://espressif.github.io/espto
 
 ### Updates
 
+Always update both, the Mega and the ESP need the same version:
+
 - **ESP:** no cable needed. On the page System of the web interface, choose the new `MobaStation-ESP8266.bin` and
   press "Update". The WiFi settings stay.
 - **Mega:** flash the new `MobaStation-Mega.hex` as above. The settings in its EEPROM stay.
 
+Until both are updated the web interface shows "Station not connected", the ESP update works anyway.
 The firmware version is shown on the page System.
 
 ## First start
@@ -181,6 +188,9 @@ System.
 | System | Firmware version, ESP update in the browser, restart, language, log. |
 
 The web interface talks to the Mega like a Z21 app, so it works next to the Z21 app, Rocrail and a multiMAUS.
+When the web interface or an app changes a loco that a multiMAUS drives, the loco symbol of the multiMAUS blinks
+("operated by another device"). Its display keeps the old state, select the loco again on the multiMAUS to see the
+current one.
 
 <p align="center">
   <img src="/WebUI-images/status.png" width="400" alt="Status page: track power, currents, voltage, Z21 clients">
