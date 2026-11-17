@@ -201,7 +201,7 @@ In the mode "Combined", turnout addresses up to the DCC range go out as DCC and 
 with a range of 1000, DCC decoders use addresses 1-1000 and MobaBus modules start at 1001.
 
 Flash every Nano board with `examples/universal` of MobaBus. Then set it up on the MobaBus page with "Configure":
-functions (LED, candle, house, servo, sensors, …), pins or PCA9685 channels, and addresses. Module CVs can also be
+functions (LED, candle, house, servo, sensors, …), pins, PCA9685 channels or MCP23017 pins, and addresses. Module CVs can also be
 written with "POM accessory" from any Z21 software.
 
 ## Building it yourself

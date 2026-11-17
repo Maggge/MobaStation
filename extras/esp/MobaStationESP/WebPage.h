@@ -291,7 +291,8 @@ const EN={
 'Adresse und Anschluss stellst du beim Board unter „Konfigurieren“ ein.':'Address and pin are set at the board with "Configure".',
 'ja':'yes','Wert 0-255':'Value 0-255','Zurückgesetzt':'Reset done','Adresse 1-16383':'Address 1-16383','Neue Adresse {}':'New address {}',
 'Fehler: {}':'Error: {}','Lese {}/{}':'Reading {}/{}','Licht, 1 kHz':'Lights, 1 kHz',
-'Kein PCA9685 gefunden (I2C an A4/A5, Adresse 0x40 oder 0x41). Es stehen die Pins des Nano zur Verfügung.':'No PCA9685 found (I2C at A4/A5, address 0x40 or 0x41). The pins of the Nano are available.',
+'Kein PCA9685 oder MCP23017 gefunden (I2C an A4/A5: PCA9685 0x40/0x41, MCP23017 0x20/0x21). Es stehen die Pins des Nano zur Verfügung.':'No PCA9685 or MCP23017 found (I2C at A4/A5: PCA9685 0x40/0x41, MCP23017 0x20/0x21). The pins of the Nano are available.',
+'MCP23017 0x2{} (MCP{}): 16 digitale Anschlüsse, ohne Dimmen':'MCP23017 0x2{} (MCP{}): 16 digital pins, no dimming',
 'Ungespeicherte Änderungen':'Unsaved changes','ohne Adresse wartet das Modul':'without an address the module waits','Rückmelder 1-20':'Feedback 1-20',
 'wird als DCC-Weiche gesendet (Zentrale)':'is sent as a DCC turnout (Station)','Anschluss…':'Pin…','belegt':'in use',
 'erster Anschluss ist Dauerlicht':'first pin is always on','ohne internen Pull-up':'without internal pull-up','+ Funktion hinzufügen':'+ Add function',
@@ -347,7 +348,8 @@ const FNEED=[0,2,4,4,4,2,2,2,8,1],FMIN=[0,1,1,1,1,1,2,1,1,1],FMAX=[0,1,1,1,2,1,2
 const BSTAT={0:'',1:'unbekanntes Register',2:'nur lesbar',3:'ungültiger Wert',4:'RAM des Boards voll',5:'Anschluss doppelt belegt',
  6:'Anschluss kann diese Funktion nicht',7:'falsche Anzahl Anschlüsse',8:'Servo an einem Pin: D9/D10 haben dann kein PWM',254:'keine MobaBus-Verbindung',255:'keine Antwort'};
 const hex=n=>n.toString(16).toUpperCase().padStart(4,'0');
-const ioName=io=>io>=100?'PCA'+(io>=116?2:1)+' K'+((io-100)%16):io>=14?'A'+(io-14):'D'+io;
+//IOs of a universal board: Nano pins, PCA9685 0x40/0x41 from 100, MCP23017 0x20/0x21 from 132
+const ioName=io=>io>=132?'MCP'+(io>=148?2:1)+' '+((io-132)%16<8?'A':'B')+((io-132)%8):io>=100?'PCA'+(io>=116?2:1)+' K'+((io-100)%16):io>=14?'A'+(io-14):'D'+io;
 const BASE={7:'Version',8:'Hersteller (13 = DIY)',30:'Modultyp',31:'Anzahl Adressen'};
 const STATUS={0:'',1:'unbekannte CV',2:'nur lesbar',3:'ungültiger Wert',254:'keine MobaBus-Adresse',255:'keine Antwort'};
 [RAIL,TYPES,CVS,FN,BSTAT,BASE,STATUS].forEach(Lt);
@@ -475,7 +477,7 @@ function openBoard(id){bq=[];bcur=null;clearTimeout(btimer);
  const step=m=>{if(m.status){if(!failed)msg.textContent=L('Fehler: {}',BSTAT[m.status]||m.status);failed=true;return false}
   msg.textContent=L('Lese {}/{}',++done,total);if(done==total){msg.textContent='';buildSlots();renderBoard()}return true};
  breq({board:id,reg:1,count:3},m=>{if(!step(m))return;bd.modes=[m.values[0],m.values[1]];bd.origModes=bd.modes.slice();bd.found=m.values[2];
-  const ios=[...Array(32).keys()];for(const b of [0,1])if(bd.found&(1<<b))for(let c=0;c<16;c++)ios.push(100+b*16+c);
+  const ios=[...Array(32).keys()];for(const b of [0,1,2,3])if(bd.found&(1<<b))for(let c=0;c<16;c++)ios.push(100+b*16+c);
   const reads=[];for(let i=0;i<ios.length;i+=3)reads.push(['c',256+ios[i],Math.min(3,ios.length-i)]);
   for(let r=16;r<SLOT(16);r+=3)reads.push(['s',r,Math.min(3,SLOT(16)-r)]);
   total=1+reads.length;
@@ -484,12 +486,13 @@ function openBoard(id){bq=[];bcur=null;clearTimeout(btimer);
    if(!m.status)m.values.forEach((v,i)=>{if(k=='c')bd.caps[reg-256+i]=v;else bd.orig[reg+i]=v});step(m)})})}
 function buildSlots(){bd.slots=[];for(let s=0;s<16;s++){const o=bd.orig,r=SLOT(s);
  bd.slots.push({f:o[r],io:[1,2,3,4,5,6,7,8].map(i=>o[r+i]),p1:o[r+9],p2:o[r+10],addr:o[r+11]|(o[r+12]<<8)})}}
-function capsOf(io){if(io>=100){const b=io>=116?1:0;return bd.found&(1<<b)?(bd.modes[b]?8:6):0}return bd.caps[io]||0}
+function capsOf(io){if(io>=100&&io<132){const b=io>=116?1:0;return bd.found&(1<<b)?(bd.modes[b]?8:6):0}return bd.caps[io]||0}
 function renderBoard(){const B=$('bdBody');B.innerHTML='';
  for(const b of [0,1])if(bd.found&(1<<b)){const r=el('div','row');r.append(el('span','','PCA9685 0x4'+b+' (PCA'+(b+1)+')'));
   const s=el('select');s.style.width='auto';[[L('Licht, 1 kHz'),0],['Servos, 50 Hz',1]].forEach(([t,v])=>{const o=el('option','',t);o.value=v;s.append(o)});
   s.value=bd.modes[b];s.onchange=()=>{bd.modes[b]=Number(s.value);renderBoard()};r.append(s);B.append(r)}
- if(!bd.found)B.append(el('p','small muted',L('Kein PCA9685 gefunden (I2C an A4/A5, Adresse 0x40 oder 0x41). Es stehen die Pins des Nano zur Verfügung.')));
+ for(const b of [0,1])if(bd.found&(4<<b))B.append(el('div','row',L('MCP23017 0x2{} (MCP{}): 16 digitale Anschlüsse, ohne Dimmen',b,b+1)));
+ if(!bd.found)B.append(el('p','small muted',L('Kein PCA9685 oder MCP23017 gefunden (I2C an A4/A5: PCA9685 0x40/0x41, MCP23017 0x20/0x21). Es stehen die Pins des Nano zur Verfügung.')));
  //IOs in use: slot and position
  const used={};bd.slots.forEach((sl,s)=>{if(sl.f)sl.io.slice(0,FMAX[sl.f]).forEach((io,i)=>{if(io!=255)used[io]=s+':'+i})});
  const allIo=Object.keys(bd.caps).map(Number).concat([...Array(32)].map((_,c)=>100+c)).filter((v,i,a)=>a.indexOf(v)==i&&capsOf(v)).sort((a,b)=>a-b);
@@ -509,7 +512,9 @@ function renderBoard(){const B=$('bdBody');B.innerHTML='';
    for(let i=0;i<FMAX[sl.f];i++){const w=el('span','io'),sel=el('select'),cur=sl.io[i];
     const tv=sl.f==7&&(sl.p1>>i)&1,nd=need|(tv?4:0);
     const none=el('option','',i<FMIN[sl.f]?L('Anschluss…'):'–');none.value=255;sel.append(none);
-    for(const io of allIo){const c=capsOf(io);if((c&nd)!=nd&&io!=cur)continue;
+    //a sensor reads all inputs on the Nano or all on one MCP23017
+    const grp=x=>x<132?0:x<148?1:2,other=sl.f==9?sl.io.slice(0,FMAX[9]).find((x,k)=>x!=255&&k!=i):undefined;
+    for(const io of allIo){const c=capsOf(io);if((c&nd)!=nd&&io!=cur)continue;if(other!==undefined&&grp(io)!=grp(other)&&io!=cur)continue;
      const o=el('option','',ioName(io)+(io<100&&c&4?' ~':''));o.value=io;
      if(used[io]!==undefined&&used[io]!=s+':'+i){o.disabled=true;o.textContent+=' ('+L('belegt')+')'}
      if((c&nd)!=nd)o.textContent+=' (!)';sel.append(o)}

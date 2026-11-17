@@ -33,7 +33,7 @@
 #include <WebPageGz.h>
 #endif
 
-#define FIRMWARE_VERSION "0.5.0"
+#define FIRMWARE_VERSION "0.5.1"
 #define MAX_MODULES_LIST 32
 //the Z21 data of one datagram, longer packets are cut (the Mega handles 64 bytes)
 #define UDP_MAX 64
